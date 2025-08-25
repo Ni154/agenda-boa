@@ -198,7 +198,7 @@ criar_usuario_padrao()
 # ---------------- HELPERS ----------------
 def moeda(v):
     try:
-        return f"R$ {float(v):,.2f}".replace(\",\", \"X\").replace(\".\", \",\").replace(\"X\", \".\")
+        return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except Exception:
         return "R$ 0,00"
 
