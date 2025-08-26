@@ -1,6 +1,6 @@
 
-# app_streamlit_completo_v5.txt
-# Execute: streamlit run app_streamlit_completo_v5.txt
+# app_streamlit_completo_v5_1.txt
+# Execute: streamlit run app_streamlit_completo_v5_1.txt
 
 import streamlit as st
 import sqlite3, os, io, base64, urllib.parse, shutil
@@ -93,7 +93,7 @@ def criar_tabelas():
         total REAL,
         cancelada INTEGER DEFAULT 0,
         forma_pagamento TEXT,
-        origem TEXT,              -- 'nova' ou 'agendamento:<id>'
+        origem TEXT,
         FOREIGN KEY(cliente_id) REFERENCES clientes(id)
     )
     """)
@@ -101,22 +101,21 @@ def criar_tabelas():
     CREATE TABLE IF NOT EXISTS venda_itens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         venda_id INTEGER,
-        tipo TEXT,          -- 'produto' ou 'servico'
+        tipo TEXT,
         item_id INTEGER,
         quantidade INTEGER,
         preco REAL,
         FOREIGN KEY(venda_id) REFERENCES vendas(id)
     )
     """)
-    # Despesas + fornecedor e cabeçalho completo
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS despesas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tipo_nota TEXT,             -- 'Produtos' ou 'Serviços'
+        tipo_nota TEXT,
         numero_nota TEXT,
-        data_compra TEXT,           -- para Produtos
-        data_emissao TEXT,          -- para Serviços
-        data_entrada TEXT,          -- para Serviços
+        data_compra TEXT,
+        data_emissao TEXT,
+        data_entrada TEXT,
         fornecedor_nome TEXT,
         fornecedor_cnpj TEXT,
         fornecedor_endereco TEXT,
@@ -124,24 +123,22 @@ def criar_tabelas():
         chave_nfe_text TEXT,
         chave_nfe_img BLOB,
         valor_total REAL,
-        descricao TEXT              -- campo livre (opcional)
+        descricao TEXT
     )
     """)
-    # Itens da despesa (produtos)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS despesa_itens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         despesa_id INTEGER NOT NULL,
         cod_produto TEXT,
         produto_nome TEXT,
-        tipo_produto TEXT,         -- 'Revenda' | 'Uso e consumo' | 'Matéria-prima'
+        tipo_produto TEXT,
         quantidade INTEGER,
         custo_unit REAL,
-        preco_venda REAL,          -- obrigatório se tipo_produto = 'Revenda'
+        preco_venda REAL,
         FOREIGN KEY(despesa_id) REFERENCES despesas(id)
     )
     """)
-    # Itens de serviços na nota
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS despesa_servico_itens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,7 +152,6 @@ def criar_tabelas():
     conn.commit()
 
 def upgrade_colunas():
-    # garantir colunas novas em bancos antigos
     alters = [
         ("ALTER TABLE produtos ADD COLUMN cod TEXT", "produtos", "cod"),
         ("ALTER TABLE produtos ADD COLUMN preco_custo REAL", "produtos", "preco_custo"),
@@ -219,7 +215,6 @@ def get_empresa():
         return {"nome":"", "cnpj":"", "telefone":""}
 
 def upsert_produto_estoque_por_codigo(cod, nome, qtd, custo_unit, preco_venda=None):
-    # atualiza/adiciona produto no estoque usando COD
     row = cursor.execute("SELECT id, quantidade FROM produtos WHERE cod = ?", (cod,)).fetchone()
     if row:
         cursor.execute("UPDATE produtos SET quantidade = COALESCE(quantidade,0)+?, preco_custo=?, preco_venda=COALESCE(?, preco_venda) WHERE id=?",
@@ -263,7 +258,6 @@ def gerar_pdf_venda(venda_id:int):
     w,h = A4
     y = h - 20*mm
 
-    # Cabeçalho com Empresa
     c.setFont("Helvetica-Bold", 12)
     c.drawString(20*mm, y, emp.get("nome",""))
     y -= 6*mm
@@ -309,17 +303,17 @@ if not st.session_state.login:
     st.markdown('<div class="center-box"><div class="login-card">', unsafe_allow_html=True)
     st.markdown('<div class="login-title">🔐 Acesso ao Sistema</div>', unsafe_allow_html=True)
     st.markdown('<div class="login-sub">Entre com suas credenciais</div>', unsafe_allow_html=True)
-    usuario_input = st.text_input("Usuário")
-    senha_input = st.text_input("Senha", type="password")
+    usuario_input = st.text_input("Usuário", key="login_user")
+    senha_input = st.text_input("Senha", type="password", key="login_pass")
     c1,c2 = st.columns([1,1])
-    if c1.button("Entrar", type="primary"):
+    if c1.button("Entrar", type="primary", key="login_enter"):
         if cursor.execute("SELECT 1 FROM usuarios WHERE usuario=? AND senha=?", (usuario_input, senha_input)).fetchone():
             st.session_state.login = True
-            st.session_state["menu"] = "Início"  # começa no Início
+            st.session_state["menu"] = "Início"
             st.experimental_rerun()
         else:
             st.error("Usuário ou senha inválidos")
-    if c2.button("Esqueci"):
+    if c2.button("Esqueci", key="login_forgot"):
         st.info("Usuário padrão: admin / Senha: admin")
     st.markdown('</div></div>', unsafe_allow_html=True)
     st.stop()
@@ -336,7 +330,7 @@ with st.sidebar:
         st.image("https://via.placeholder.com/150x100.png?text=LOGO", width=150)
 
     st.write("📎 **Importar nova logo:**")
-    upl = st.file_uploader("Importar Logo", type=["png","jpg","jpeg"])
+    upl = st.file_uploader("Importar Logo", type=["png","jpg","jpeg"], key="logo_upload")
     if upl:
         b = upl.read()
         with open("logo_studio.png","wb") as f: f.write(b)
@@ -351,18 +345,17 @@ with st.sidebar:
               "Cadastro Serviços":"💆","Agendamento":"📅","Vendas":"💰","Despesas":"💸",
               "Relatórios":"📊","Backup":"💾","Sair":"🔓"}
     for opc in menu_opcoes:
-        if st.button(f"{icones.get(opc,'📌')} {opc}"):
+        if st.button(f"{icones.get(opc,'📌')} {opc}", key=f"m_{opc}"):
             st.session_state["menu"] = opc
 
 menu = st.session_state.get("menu", "Início")
 st.title(f"🧭 {menu}")
 
 # --------------- PÁGINAS ---------------
-# Início: agendamentos com nome, status e data + link WhatsApp
 if menu == "Início":
     st.subheader("📅 Agendamentos do Período")
-    data_inicio = st.date_input("De", date.today(), format="DD/MM/YYYY")
-    data_fim = st.date_input("Até", date.today(), format="DD/MM/YYYY")
+    data_inicio = st.date_input("De", date.today(), format="DD/MM/YYYY", key="home_de")
+    data_fim = st.date_input("Até", date.today(), format="DD/MM/YYYY", key="home_ate")
     if data_inicio > data_fim:
         st.error("Data inicial não pode ser maior que a final.")
     else:
@@ -384,7 +377,6 @@ if menu == "Início":
         else:
             st.warning("Nenhum agendamento no período.")
 
-# Dashboard simples
 elif menu == "Dashboard":
     st.subheader("📊 Visão Geral")
     total_clientes = cursor.execute("SELECT COUNT(*) FROM clientes").fetchone()[0]
@@ -404,7 +396,6 @@ elif menu == "Dashboard":
     st.metric("💸 Despesas", moeda(total_despesas))
     st.metric("📈 Lucro", moeda(lucro))
 
-# Cadastro Cliente (reativo)
 elif menu == "Cadastro Cliente":
     st.subheader("🧍 Cadastro de Clientes")
     try:
@@ -414,21 +405,21 @@ elif menu == "Cadastro Cliente":
         has_canvas = False
         st.warning("Para assinatura digital, instale: pip install streamlit-drawable-canvas")
 
-    nome = st.text_input("Nome")
-    telefone = st.text_input("Telefone (WhatsApp)")
-    email = st.text_input("E-mail")
-    endereco = st.text_input("Endereço")
-    alergia_flag = st.checkbox("Possui algum tipo de alergia?")
-    alergia_desc = st.text_input("Descreva o tipo de alergia", disabled=not alergia_flag)
-    cirurgia_flag = st.checkbox("Passou por cirurgia?")
-    cirurgia_desc = st.text_input("Descreva a cirurgia", disabled=not cirurgia_flag)
-    autoriza_imagem = st.checkbox("Autoriza o uso da imagem?")
+    nome = st.text_input("Nome", key="cli_nome")
+    telefone = st.text_input("Telefone (WhatsApp)", key="cli_tel")
+    email = st.text_input("E-mail", key="cli_mail")
+    endereco = st.text_input("Endereço", key="cli_end")
+    alergia_flag = st.checkbox("Possui algum tipo de alergia?", key="cli_alergia_flag")
+    alergia_desc = st.text_input("Descreva o tipo de alergia", disabled=not alergia_flag, key="cli_alergia_desc")
+    cirurgia_flag = st.checkbox("Passou por cirurgia?", key="cli_cir_flag")
+    cirurgia_desc = st.text_input("Descreva a cirurgia", disabled=not cirurgia_flag, key="cli_cir_desc")
+    autoriza_imagem = st.checkbox("Autoriza o uso da imagem?", key="cli_img_ok")
 
     st.markdown("**Assinatura digital** — _“Confirmo as informações acima no cadastro.”_")
     assinatura_bytes = None
     if has_canvas:
         canvas = st_canvas(stroke_width=2, stroke_color="#000000", background_color="#FFFFFF",
-                           height=150, width=300, drawing_mode="freedraw", key="canvas_sig_v5")
+                           height=150, width=300, drawing_mode="freedraw", key="canvas_sig_v51")
         if canvas.image_data is not None:
             import numpy as np
             from PIL import Image
@@ -437,15 +428,15 @@ elif menu == "Cadastro Cliente":
 
     st.markdown("**Foto 3x4**")
     foto_bytes = None
-    modo_foto = st.radio("Origem da foto", ["Nenhuma","Câmera","Galeria"], horizontal=True)
+    modo_foto = st.radio("Origem da foto", ["Nenhuma","Câmera","Galeria"], horizontal=True, key="cli_foto_mode")
     if modo_foto == "Câmera":
-        cam = st.camera_input("Tirar foto (clique para ativar)")
+        cam = st.camera_input("Tirar foto (clique para ativar)", key="cli_cam")
         if cam: foto_bytes = cam.getvalue()
     elif modo_foto == "Galeria":
-        up = st.file_uploader("Enviar foto 3x4", type=["png","jpg","jpeg"])
+        up = st.file_uploader("Enviar foto 3x4", type=["png","jpg","jpeg"], key="cli_galeria")
         if up: foto_bytes = up.read()
 
-    if st.button("Salvar Cliente", type="primary"):
+    if st.button("Salvar Cliente", type="primary", key="cli_save"):
         if nome.strip():
             cursor.execute("""
                 INSERT INTO clientes (nome, telefone, email, endereco, alergia_flag, alergia_desc, cirurgia_flag, cirurgia_desc, autoriza_imagem, assinatura, foto)
@@ -468,14 +459,13 @@ elif menu == "Cadastro Cliente":
     """, conn)
     st.dataframe(dfc, use_container_width=True)
 
-# Cadastro Empresa
 elif menu == "Cadastro Empresa":
     st.subheader("🏢 Cadastro da Empresa")
     emp = get_empresa()
-    nome = st.text_input("Nome da empresa", value=emp.get("nome",""))
-    cnpj = st.text_input("CNPJ", value=emp.get("cnpj",""))
-    telefone = st.text_input("Telefone", value=emp.get("telefone",""))
-    if st.button("Salvar dados da empresa"):
+    nome = st.text_input("Nome da empresa", value=emp.get("nome",""), key="emp_nome")
+    cnpj = st.text_input("CNPJ", value=emp.get("cnpj",""), key="emp_cnpj")
+    telefone = st.text_input("Telefone", value=emp.get("telefone",""), key="emp_tel")
+    if st.button("Salvar dados da empresa", key="emp_save"):
         if cursor.execute("SELECT 1 FROM empresa WHERE id=1").fetchone():
             cursor.execute("UPDATE empresa SET nome=?, cnpj=?, telefone=? WHERE id=1", (nome, cnpj, telefone))
         else:
@@ -483,7 +473,6 @@ elif menu == "Cadastro Empresa":
         conn.commit()
         st.success("Empresa salva/atualizada!")
 
-# Cadastro Produtos com histórico + editar/excluir + novos campos
 elif menu == "Cadastro Produtos":
     st.subheader("📦 Produtos")
     if "edit_prod_id" not in st.session_state:
@@ -491,13 +480,13 @@ elif menu == "Cadastro Produtos":
 
     col1,col2 = st.columns([1,2])
     with col1:
-        cod = st.text_input("Código do produto")
-        nome = st.text_input("Nome do produto")
-        preco_custo = st.number_input("Preço de custo (R$)", min_value=0.0, step=0.5, format="%.2f")
-        preco_venda = st.number_input("Preço de venda (R$)", min_value=0.0, step=0.5, format="%.2f")
-        unidade = st.text_input("Unidade (ex: un, cx, kg)")
-        quantidade = st.number_input("Quantidade", min_value=0, step=1, value=0)
-        if st.button("Salvar/Atualizar Produto"):
+        cod = st.text_input("Código do produto", key="pr_cod")
+        nome = st.text_input("Nome do produto", key="pr_nome")
+        preco_custo = st.number_input("Preço de custo (R$)", min_value=0.0, step=0.5, format="%.2f", key="pr_custo")
+        preco_venda = st.number_input("Preço de venda (R$)", min_value=0.0, step=0.5, format="%.2f", key="pr_pv")
+        unidade = st.text_input("Unidade (ex: un, cx, kg)", key="pr_un")
+        quantidade = st.number_input("Quantidade", min_value=0, step=1, value=0, key="pr_qtd")
+        if st.button("Salvar/Atualizar Produto", key="pr_save"):
             if nome.strip():
                 try:
                     cursor.execute("""
@@ -505,7 +494,6 @@ elif menu == "Cadastro Produtos":
                         VALUES (?,?,?,?,?,?)
                     """, (cod.strip() or None, nome.strip(), int(quantidade), float(preco_custo), float(preco_venda), unidade.strip() or None))
                 except sqlite3.IntegrityError:
-                    # update by nome or cod
                     if cod.strip():
                         cursor.execute("""
                             UPDATE produtos SET quantidade=COALESCE(quantidade,0)+?, preco_custo=?, preco_venda=?, unidade=?
@@ -557,17 +545,16 @@ elif menu == "Cadastro Produtos":
                         if cols[1].button("Cancelar", key=f"cancel_{pid}"):
                             st.session_state.edit_prod_id = None; st.rerun()
 
-# Cadastro Serviços (com tempo de sessão, estoque, editar/excluir)
 elif menu == "Cadastro Serviços":
     st.subheader("💆 Serviços")
     col1,col2 = st.columns([1,2])
     with col1:
-        nome = st.text_input("Nome do serviço")
-        valor = st.number_input("Valor (R$)", min_value=0.0, step=0.5, format="%.2f")
-        tempo = st.number_input("Tempo de sessão (min)", min_value=0, step=5, value=0)
-        gera_estoque = st.checkbox("Gerar estoque para este serviço?")
-        estoque_qtd = st.number_input("Qtd. inicial de estoque (pacotes/sessões)", min_value=0, step=1, value=0, disabled=not gera_estoque)
-        if st.button("Salvar Serviço"):
+        nome = st.text_input("Nome do serviço", key="srv_nome")
+        valor = st.number_input("Valor (R$)", min_value=0.0, step=0.5, format="%.2f", key="srv_valor")
+        tempo = st.number_input("Tempo de sessão (min)", min_value=0, step=5, value=0, key="srv_tempo")
+        gera_estoque = st.checkbox("Gerar estoque para este serviço?", key="srv_gera")
+        estoque_qtd = st.number_input("Qtd. inicial de estoque (pacotes/sessões)", min_value=0, step=1, value=0, key="srv_qtd", disabled=not gera_estoque)
+        if st.button("Salvar Serviço", key="srv_save"):
             if nome.strip():
                 cursor.execute("""
                     INSERT INTO servicos (nome, valor, tempo_sessao_min, gera_estoque, estoque_qtd) VALUES (?,?,?,?,?)
@@ -603,7 +590,6 @@ elif menu == "Cadastro Serviços":
         else:
             st.info("Nenhum serviço cadastrado.")
 
-# Agendamento
 elif menu == "Agendamento":
     st.subheader("📅 Agendamentos")
     clientes = cursor.execute("SELECT id, nome FROM clientes ORDER BY nome").fetchall()
@@ -613,11 +599,11 @@ elif menu == "Agendamento":
 
     col1,col2 = st.columns([1,2])
     with col1:
-        cliente_nome = st.selectbox("Cliente", [""] + list(d_cli.keys()))
-        data_ag = st.date_input("Data", date.today())
-        hora = st.text_input("Hora (ex: 14:30)")
-        serv_sel = st.multiselect("Serviços", nomes_serv)
-        if st.button("Salvar Agendamento"):
+        cliente_nome = st.selectbox("Cliente", [""] + list(d_cli.keys()), key="ag_cli")
+        data_ag = st.date_input("Data", date.today(), key="ag_data")
+        hora = st.text_input("Hora (ex: 14:30)", key="ag_hora")
+        serv_sel = st.multiselect("Serviços", nomes_serv, key="ag_servs")
+        if st.button("Salvar Agendamento", key="ag_save"):
             if not cliente_nome: st.error("Selecione um cliente.")
             elif not hora: st.error("Informe a hora.")
             else:
@@ -634,7 +620,6 @@ elif menu == "Agendamento":
         """, conn)
         st.dataframe(df_ag, use_container_width=True)
 
-# Vendas (UI melhorada + pré-venda de agendamento)
 elif menu == "Vendas":
     st.subheader("💰 Painel de Vendas")
 
@@ -651,12 +636,12 @@ elif menu == "Vendas":
         colA, colB = st.columns([1,1])
         with colA:
             st.markdown('<div class="card"><div class="title">Origem da venda</div>', unsafe_allow_html=True)
-            modo = st.radio("", ["Nova venda", "Carregar de agendamento"], horizontal=True, key="modo_venda_v5")
+            modo = st.radio("", ["Nova venda", "Carregar de agendamento"], horizontal=True, key="modo_venda_v51")
             st.markdown('</div>', unsafe_allow_html=True)
         with colB:
             clientes = cursor.execute("SELECT id, nome FROM clientes ORDER BY nome").fetchall()
             nomes_cli = ["Selecione..."] + [c[1] for c in clientes]
-            idxc = st.selectbox("Cliente", range(len(nomes_cli)), format_func=lambda i: nomes_cli[i], key="cli_venda_v5")
+            idxc = st.selectbox("Cliente", range(len(nomes_cli)), format_func=lambda i: nomes_cli[i], key="cli_venda_v51")
             cliente_id = None if idxc==0 else clientes[idxc-1][0]
 
     produtos = cursor.execute("SELECT id, cod, nome, preco_venda, quantidade FROM produtos ORDER BY nome").fetchall()
@@ -670,8 +655,8 @@ elif menu == "Vendas":
         """).fetchall()
         if ags:
             label_map = {f"#{i[0]} - {i[1]} - {i[2]}": i for i in ags}
-            escolha = st.selectbox("Agendamento", list(label_map.keys()))
-            if st.button("Carregar pré-venda do agendamento"):
+            escolha = st.selectbox("Agendamento", list(label_map.keys()), key="vend_ag_sel")
+            if st.button("Carregar pré-venda do agendamento", key="vend_ag_load"):
                 _, nome_cli, lista_serv = label_map[escolha]
                 for s in servicos:
                     if s[1] in (lista_serv or ""):
@@ -684,21 +669,21 @@ elif menu == "Vendas":
     with tab_prod:
         if produtos:
             nomes = [f"{p[2]} (COD: {p[1] or '-'})  |  Estoque: {p[4]}" for p in produtos]
-            sel = st.selectbox("Produto", nomes)
+            sel = st.selectbox("Produto", nomes, key="vend_prod_sel")
             idx = nomes.index(sel); p = produtos[idx]
-            qtd = st.number_input("Qtd", min_value=1, step=1, value=1, key="qtdp_v5")
-            preco = st.number_input("Preço (R$)", min_value=0.0, step=0.5, value=float(p[3] or 0.0), format="%.2f", key="pp_v5")
-            if st.button("Adicionar produto"):
+            qtd = st.number_input("Qtd", min_value=1, step=1, value=1, key="vend_qtdp_v51")
+            preco = st.number_input("Preço (R$)", min_value=0.0, step=0.5, value=float(p[3] or 0.0), format="%.2f", key="vend_pp_v51")
+            if st.button("Adicionar produto", key="vend_add_prod"):
                 st.session_state.carrinho.append({"tipo":"produto","id":p[0],"nome":p[2],"qtd":int(qtd),"preco":float(preco)}); st.success("Adicionado.")
         else: st.info("Cadastre produtos.")
     with tab_serv:
         if servicos:
             nomes = [f"{s[1]} (R$ {s[2]:.2f})" for s in servicos]
-            sel = st.selectbox("Serviço", nomes)
+            sel = st.selectbox("Serviço", nomes, key="vend_srv_sel")
             idx = nomes.index(sel); s = servicos[idx]
-            qtd = st.number_input("Qtd", min_value=1, step=1, value=1, key="qtds_v5")
-            preco = st.number_input("Preço (R$)", min_value=0.0, step=0.5, value=float(s[2] or 0.0), format="%.2f", key="ps_v5")
-            if st.button("Adicionar serviço"):
+            qtd = st.number_input("Qtd", min_value=1, step=1, value=1, key="vend_qtds_v51")
+            preco = st.number_input("Preço (R$)", min_value=0.0, step=0.5, value=float(s[2] or 0.0), format="%.2f", key="vend_ps_v51")
+            if st.button("Adicionar serviço", key="vend_add_srv"):
                 st.session_state.carrinho.append({"tipo":"servico","id":s[0],"nome":s[1],"qtd":int(qtd),"preco":float(preco)}); st.success("Adicionado.")
         else: st.info("Cadastre serviços.")
 
@@ -712,9 +697,9 @@ elif menu == "Vendas":
 
         c1,c2,c3 = st.columns([2,2,1])
         with c2:
-            forma = st.selectbox("Forma de pagamento", ["Dinheiro","Pix","Cartão","Outro"])
+            forma = st.selectbox("Forma de pagamento", ["Dinheiro","Pix","Cartão","Outro"], key="vend_forma")
         with c3:
-            if st.button("Finalizar venda", type="primary"):
+            if st.button("Finalizar venda", type="primary", key="vend_final"):
                 if not cliente_id: st.error("Selecione um cliente.")
                 else:
                     agora = datetime.now().isoformat()
@@ -743,8 +728,8 @@ elif menu == "Vendas":
     st.markdown("---")
     st.subheader("Histórico de Vendas com Filtro e Cancelamento")
     colf = st.columns(3)
-    data_de = colf[0].date_input("De", date.today())
-    data_ate = colf[1].date_input("Até", date.today())
+    data_de = colf[0].date_input("De", date.today(), key="vend_hist_de")
+    data_ate = colf[1].date_input("Até", date.today(), key="vend_hist_ate")
     if data_de > data_ate:
         st.error("Data inicial maior que final.")
     else:
@@ -782,30 +767,28 @@ elif menu == "Vendas":
                     cursor.execute("UPDATE vendas SET cancelada=1 WHERE id=?", (v[0],))
                     conn.commit(); st.warning(f"Venda #{v[0]} cancelada."); st.rerun()
 
-# Despesas: Nota de Produtos e Nota de Serviços (cabeçalho completo + histórico)
 elif menu == "Despesas":
     st.subheader("💸 Despesas / Notas de Entrada")
     aba_prod, aba_serv = st.tabs(["Nota de Produtos", "Nota de Serviços"])
 
-    # ---------------- Nota de Produtos ----------------
     with aba_prod:
         if "despesa_itens" not in st.session_state:
             st.session_state.despesa_itens = []
 
         st.markdown("#### Cabeçalho")
         c0 = st.columns(5)
-        numero_nota = c0[0].text_input("Número da nota")
-        data_compra = c0[1].date_input("Data da compra", value=date.today())
-        fornecedor_nome = c0[2].text_input("Fornecedor - Nome")
-        fornecedor_cnpj = c0[3].text_input("CNPJ")
-        fornecedor_telefone = c0[4].text_input("Telefone")
+        numero_nota = c0[0].text_input("Número da nota", key="np_numero")
+        data_compra = c0[1].date_input("Data da compra", value=date.today(), key="np_data_compra")
+        fornecedor_nome = c0[2].text_input("Fornecedor - Nome", key="np_for_nome")
+        fornecedor_cnpj = c0[3].text_input("CNPJ", key="np_for_cnpj")
+        fornecedor_telefone = c0[4].text_input("Telefone", key="np_for_tel")
         c1 = st.columns(2)
-        fornecedor_endereco = c1[0].text_input("Endereço")
-        chave_nfe_text = c1[1].text_input("Chave NFe (se preferir digitar)")
+        fornecedor_endereco = c1[0].text_input("Endereço", key="np_for_end")
+        chave_nfe_text = c1[1].text_input("Chave NFe (se preferir digitar)", key="np_chave_text")
         st.write("Anexar imagem do QR-Code / chave da nota (opcional)")
-        chave_img = st.camera_input("Escanear com a câmera (opcional)")  # guardamos a imagem, não decodificamos
+        chave_img = st.camera_input("Escanear com a câmera (opcional)", key="np_chave_cam")
         if not chave_img:
-            chave_img = st.file_uploader("Ou enviar a imagem", type=["png","jpg","jpeg"])
+            chave_img = st.file_uploader("Ou enviar a imagem", type=["png","jpg","jpeg"], key="np_chave_up")
         chave_img_bytes = chave_img.getvalue() if chave_img else None
 
         st.markdown("#### Itens da Nota (Produtos)")
@@ -816,7 +799,7 @@ elif menu == "Despesas":
         with cols[3]: custo_unit = st.number_input("Custo unit (R$)", min_value=0.0, step=0.01, value=0.0, format="%.2f", key="dx_custo")
         with cols[4]: tipo_produto = st.selectbox("Tipo produto", ["Revenda","Uso e consumo","Matéria-prima"], key="dx_tipo")
         with cols[5]: pv = st.number_input("Preço de venda (se Revenda)", min_value=0.0, step=0.01, value=0.0, format="%.2f", key="dx_pv", disabled=(tipo_produto!="Revenda"))
-        if st.button("+ Adicionar item (produto)"):
+        if st.button("+ Adicionar item (produto)", key="dx_add"):
             if not cod_prod.strip():
                 st.error("Informe o código do produto.")
             else:
@@ -840,13 +823,12 @@ elif menu == "Despesas":
             total_desp = float(dfi["Subtotal"].sum())
             st.markdown(f"**Total:** {moeda(total_desp)}")
 
-            if st.button("Salvar Nota de Produtos", type="primary"):
+            if st.button("Salvar Nota de Produtos", type="primary", key="np_save"):
                 if not fornecedor_nome.strip():
                     st.error("Informe o nome do fornecedor.")
                 elif not numero_nota.strip():
                     st.error("Informe o número da nota.")
                 else:
-                    agora = datetime.now().isoformat()
                     cursor.execute("""
                         INSERT INTO despesas (tipo_nota, numero_nota, data_compra, fornecedor_nome, fornecedor_cnpj, fornecedor_endereco, fornecedor_telefone, chave_nfe_text, chave_nfe_img, valor_total)
                         VALUES ('Produtos',?,?,?,?,?,?,?,?,?)
@@ -878,27 +860,25 @@ elif menu == "Despesas":
         else:
             st.info("Sem notas de produtos cadastradas.")
 
-    # ---------------- Nota de Serviços ----------------
     with aba_serv:
         if "despesa_serv_itens" not in st.session_state:
             st.session_state.despesa_serv_itens = []
 
         st.markdown("#### Cabeçalho")
         c0 = st.columns(5)
-        numero_nota_s = c0[0].text_input("Número da nota")
-        fornecedor_nome_s = c0[1].text_input("Prestador - Nome")
-        fornecedor_cnpj_s = c0[2].text_input("CNPJ/CPF")
-        data_emissao = c0[3].date_input("Data de emissão", value=date.today())
-        data_entrada = c0[4].date_input("Data de entrada", value=date.today())
-        st.write("Descrição geral (opcional):")
-        desc_geral = st.text_area("Descrição do serviço prestado (geral)", placeholder="Ex.: Serviços de manutenção ...")
+        numero_nota_s = c0[0].text_input("Número da nota", key="ns_numero")
+        fornecedor_nome_s = c0[1].text_input("Prestador - Nome", key="ns_for_nome")
+        fornecedor_cnpj_s = c0[2].text_input("CNPJ/CPF", key="ns_for_cnpj")
+        data_emissao = c0[3].date_input("Data de emissão", value=date.today(), key="ns_emissao")
+        data_entrada = c0[4].date_input("Data de entrada", value=date.today(), key="ns_entrada")
+        desc_geral = st.text_area("Descrição do serviço prestado (geral)", placeholder="Ex.: Serviços de manutenção ...", key="ns_desc_geral")
 
         st.markdown("#### Itens (Serviços)")
         cols2 = st.columns([4,1,2])
         with cols2[0]: serv_desc = st.text_input("Descrição do serviço", key="sx_desc")
         with cols2[1]: s_qtd = st.number_input("Qtd", min_value=1, step=1, value=1, key="sx_qtd")
         with cols2[2]: s_custo = st.number_input("Valor (R$)", min_value=0.0, step=0.01, value=0.0, format="%.2f", key="sx_val")
-        if st.button("+ Adicionar serviço (nota)"):
+        if st.button("+ Adicionar serviço (nota)", key="sx_add"):
             if not serv_desc.strip():
                 st.error("Informe a descrição do serviço.")
             else:
@@ -919,7 +899,7 @@ elif menu == "Despesas":
             total2 = float(dfs["Subtotal"].sum())
             st.markdown(f"**Total:** {moeda(total2)}")
 
-            if st.button("Salvar Nota de Serviços", type="primary"):
+            if st.button("Salvar Nota de Serviços", type="primary", key="ns_save"):
                 if not fornecedor_nome_s.strip():
                     st.error("Informe o prestador.")
                 elif not numero_nota_s.strip():
@@ -940,30 +920,16 @@ elif menu == "Despesas":
                     st.session_state.despesa_serv_itens = []
                     st.success(f"Nota de Serviços #{numero_nota_s} salva.")
 
-        st.markdown("----")
-        st.write("### Histórico de Notas (Serviços)")
-        df_hist2 = pd.read_sql_query("""
-            SELECT id, numero_nota, data_emissao AS data, fornecedor_nome, valor_total
-            FROM despesas WHERE tipo_nota='Serviços' ORDER BY id DESC
-        """, conn)
-        if not df_hist2.empty:
-            df_hist2["data"] = df_hist2["data"].apply(data_br)
-            df_hist2["valor_total"] = df_hist2["valor_total"].apply(moeda)
-            st.dataframe(df_hist2, use_container_width=True)
-        else:
-            st.info("Sem notas de serviços cadastradas.")
-
-# Relatórios (funcional): filtros + export CSV
 elif menu == "Relatórios":
     st.subheader("📊 Relatórios")
     emp = get_empresa()
     st.caption(f"Empresa: {emp.get('nome','')} | CNPJ: {emp.get('cnpj','')} | Tel: {emp.get('telefone','')}")
 
-    tipo = st.selectbox("Tipo de relatório", ["Vendas", "Despesas", "Produtos"])
+    tipo = st.selectbox("Tipo de relatório", ["Vendas", "Despesas", "Produtos"], key="rep_tipo")
 
     if tipo == "Vendas":
-        de = st.date_input("De", date.today())
-        ate = st.date_input("Até", date.today())
+        de = st.date_input("De", date.today(), key="rep_v_de")
+        ate = st.date_input("Até", date.today(), key="rep_v_ate")
         if de > ate:
             st.error("Data inicial maior que final.")
         else:
@@ -979,11 +945,11 @@ elif menu == "Relatórios":
                 df["data"] = df["data"].apply(data_br)
                 df["total"] = df["total"].apply(moeda)
                 st.dataframe(df, use_container_width=True)
-                st.download_button("Exportar CSV", data=df.to_csv(index=False).encode("utf-8"), file_name="relatorio_vendas.csv", mime="text/csv")
+                st.download_button("Exportar CSV", data=df.to_csv(index=False).encode("utf-8"), file_name="relatorio_vendas.csv", mime="text/csv", key="rep_v_csv")
 
     elif tipo == "Despesas":
-        de = st.date_input("De", date.today(), key="d1")
-        ate = st.date_input("Até", date.today(), key="d2")
+        de = st.date_input("De", date.today(), key="rep_d_de")
+        ate = st.date_input("Até", date.today(), key="rep_d_ate")
         if de > ate:
             st.error("Data inicial maior que final.")
         else:
@@ -1001,7 +967,7 @@ elif menu == "Relatórios":
                 df["data"] = df["data"].apply(data_br)
                 df["valor_total"] = df["valor_total"].apply(moeda)
                 st.dataframe(df, use_container_width=True)
-                st.download_button("Exportar CSV", data=df.to_csv(index=False).encode("utf-8"), file_name="relatorio_despesas.csv", mime="text/csv")
+                st.download_button("Exportar CSV", data=df.to_csv(index=False).encode("utf-8"), file_name="relatorio_despesas.csv", mime="text/csv", key="rep_d_csv")
 
     elif tipo == "Produtos":
         df = pd.read_sql_query("SELECT id, cod, nome, quantidade, preco_custo, preco_venda, unidade FROM produtos ORDER BY nome", conn)
@@ -1009,9 +975,8 @@ elif menu == "Relatórios":
             df["preco_custo"] = df["preco_custo"].apply(moeda)
             df["preco_venda"] = df["preco_venda"].apply(moeda)
         st.dataframe(df, use_container_width=True)
-        st.download_button("Exportar CSV", data=df.to_csv(index=False).encode("utf-8"), file_name="relatorio_produtos.csv", mime="text/csv")
+        st.download_button("Exportar CSV", data=df.to_csv(index=False).encode("utf-8"), file_name="relatorio_produtos.csv", mime="text/csv", key="rep_p_csv")
 
-# Backup (download e importar)
 elif menu == "Backup":
     st.subheader("💾 Backup")
     c1,c2 = st.columns(2)
@@ -1019,24 +984,22 @@ elif menu == "Backup":
         st.write("**Exportar**")
         if os.path.exists("database.db"):
             with open("database.db","rb") as f:
-                st.download_button("Baixar database.db", data=f.read(), file_name="database.db")
+                st.download_button("Baixar database.db", data=f.read(), file_name="database.db", key="bk_exp")
         else:
             st.info("Banco ainda não foi criado.")
 
     with c2:
         st.write("**Importar**")
-        updb = st.file_uploader("Selecione um arquivo database.db exportado pelo sistema", type=["db","sqlite","sqlite3"])
-        if updb and st.button("Importar backup (substituir banco atual)"):
+        updb = st.file_uploader("Selecione um arquivo database.db exportado pelo sistema", type=["db","sqlite","sqlite3"], key="bk_up")
+        if updb and st.button("Importar backup (substituir banco atual)", key="bk_imp"):
             data = updb.read()
             try:
-                # salva como database.db (substitui)
                 with open("database.db","wb") as f:
                     f.write(data)
                 st.success("Backup importado com sucesso. Reinicie o app para aplicar.")
             except Exception as e:
                 st.error(f"Falha ao importar: {e}")
 
-# Sair
 elif menu == "Sair":
     st.session_state.clear()
     st.success("Sessão encerrada.")
