@@ -743,7 +743,7 @@ elif menu == "Vendas":
                     if s[1] in (lista_serv or ""):
                         st.session_state.carrinho.append({"tipo":"servico","id":s[0],"nome":s[1],"qtd":1,"preco":float(s[2] or 0.0)})
                 st.success("Pré-venda carregada. Cliente pré-selecionado.")
-                st.experimental_rerun()
+                st.rerun()
         else:
             st.info("Sem agendamentos.")
 
