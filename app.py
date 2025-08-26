@@ -1,6 +1,6 @@
 
-# app_streamlit_completo_v5_1.txt
-# Execute: streamlit run app_streamlit_completo_v5_1.txt
+# app_streamlit_completo_v5_4.txt
+# Execute: streamlit run app_streamlit_completo_v5_4.txt
 
 import streamlit as st
 import sqlite3, os, io, base64, urllib.parse, shutil
@@ -8,10 +8,9 @@ import pandas as pd
 from datetime import datetime, date
 from PIL import Image
 
-# ---------------- CONFIG ----------------
 st.set_page_config(page_title="Studio - ERP Completo", layout="wide")
 
-# --------------- CONEXÃO / DB ---------------
+# ---------------- CONEXÃO / DB ----------------
 @st.cache_resource
 def get_conn():
     conn = sqlite3.connect("database.db", check_same_thread=False)
@@ -27,16 +26,14 @@ def criar_tabelas():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         usuario TEXT UNIQUE,
         senha TEXT
-    )
-    """)
+    )""")
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS empresa (
         id INTEGER PRIMARY KEY,
         nome TEXT,
         cnpj TEXT,
         telefone TEXT
-    )
-    """)
+    )""")
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,8 +48,7 @@ def criar_tabelas():
         autoriza_imagem INTEGER DEFAULT 0,
         assinatura BLOB,
         foto BLOB
-    )
-    """)
+    )""")
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS produtos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,8 +58,7 @@ def criar_tabelas():
         preco_custo REAL DEFAULT 0,
         preco_venda REAL DEFAULT 0,
         unidade TEXT
-    )
-    """)
+    )""")
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS servicos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,8 +67,7 @@ def criar_tabelas():
         tempo_sessao_min INTEGER DEFAULT 0,
         gera_estoque INTEGER DEFAULT 0,
         estoque_qtd INTEGER DEFAULT 0
-    )
-    """)
+    )""")
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS agendamentos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,9 +76,9 @@ def criar_tabelas():
         hora TEXT,
         servicos TEXT,
         status TEXT,
+        cancelada INTEGER DEFAULT 0,
         FOREIGN KEY(cliente_id) REFERENCES clientes(id)
-    )
-    """)
+    )""")
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS vendas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,8 +89,7 @@ def criar_tabelas():
         forma_pagamento TEXT,
         origem TEXT,
         FOREIGN KEY(cliente_id) REFERENCES clientes(id)
-    )
-    """)
+    )""")
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS venda_itens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,8 +99,7 @@ def criar_tabelas():
         quantidade INTEGER,
         preco REAL,
         FOREIGN KEY(venda_id) REFERENCES vendas(id)
-    )
-    """)
+    )""")
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS despesas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -123,9 +115,9 @@ def criar_tabelas():
         chave_nfe_text TEXT,
         chave_nfe_img BLOB,
         valor_total REAL,
-        descricao TEXT
-    )
-    """)
+        descricao TEXT,
+        cancelada INTEGER DEFAULT 0
+    )""")
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS despesa_itens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -137,8 +129,7 @@ def criar_tabelas():
         custo_unit REAL,
         preco_venda REAL,
         FOREIGN KEY(despesa_id) REFERENCES despesas(id)
-    )
-    """)
+    )""")
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS despesa_servico_itens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -147,8 +138,7 @@ def criar_tabelas():
         quantidade INTEGER,
         custo_unit REAL,
         FOREIGN KEY(despesa_id) REFERENCES despesas(id)
-    )
-    """)
+    )""")
     conn.commit()
 
 def upgrade_colunas():
@@ -172,6 +162,8 @@ def upgrade_colunas():
         ("ALTER TABLE despesa_itens ADD COLUMN tipo_produto TEXT", "despesa_itens", "tipo_produto"),
         ("ALTER TABLE despesa_itens ADD COLUMN preco_venda REAL", "despesa_itens", "preco_venda"),
         ("ALTER TABLE empresa ADD COLUMN telefone TEXT", "empresa", "telefone"),
+        ("ALTER TABLE agendamentos ADD COLUMN cancelada INTEGER", "agendamentos", "cancelada"),
+        ("ALTER TABLE despesas ADD COLUMN cancelada INTEGER", "despesas", "cancelada"),
     ]
     for sql, table, col in alters:
         try:
@@ -194,7 +186,7 @@ criar_usuario_padrao()
 # ---------------- HELPERS ----------------
 def moeda(v):
     try:
-        return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"R$ {float(v):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     except Exception:
         return "R$ 0,00"
 
@@ -234,7 +226,7 @@ def gerar_pdf_venda(venda_id:int):
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.units import mm
     except Exception as e:
-        return None, f"Faltando reportlab ({e})"
+        return None, f"Faltando reportlab ( {e} )"
 
     venda = cursor.execute("""
         SELECT v.id, v.data, COALESCE(c.nome,'Cliente'), v.forma_pagamento, v.total
@@ -287,17 +279,22 @@ def gerar_pdf_venda(venda_id:int):
     c.showPage(); c.save()
     return buf.getvalue(), None
 
-# ---------------- LOGIN (centralizado) ---------------
+# ---------------- LOGIN (centralizado e sem barra superior) ----------------
 if "login" not in st.session_state:
     st.session_state.login = False
 
 if not st.session_state.login:
     st.markdown("""
         <style>
-        .center-box {display:flex; align-items:center; justify-content:center; height:75vh;}
-        .login-card {max-width:420px; width:100%; padding:24px; border:1px solid #eee; border-radius:16px; box-shadow:0 6px 24px rgba(0,0,0,.06); background:white;}
-        .login-title {text-align:center; font-size:1.4rem; font-weight:700; margin-bottom:12px;}
-        .login-sub {text-align:center; color:#666; margin-bottom:16px;}
+        header[data-testid="stHeader"] {display: none;}
+        div.block-container {padding-top: 2rem;}
+        body, .stApp {background: #f7f8fa;}
+        .center-box {display:flex; align-items:center; justify-content:center; height:84vh;}
+        .login-card {max-width:440px; width:100%; padding:28px; border:1px solid #eee; border-radius:16px; 
+                     box-shadow:0 10px 32px rgba(0,0,0,.06); background:white;}
+        .login-title {text-align:center; font-size:1.5rem; font-weight:800; margin-bottom:6px;}
+        .login-sub {text-align:center; color:#666; margin-bottom:18px;}
+        .login-footer {text-align:center; color:#999; font-size:.85rem; margin-top:8px;}
         </style>
     """, unsafe_allow_html=True)
     st.markdown('<div class="center-box"><div class="login-card">', unsafe_allow_html=True)
@@ -315,10 +312,11 @@ if not st.session_state.login:
             st.error("Usuário ou senha inválidos")
     if c2.button("Esqueci", key="login_forgot"):
         st.info("Usuário padrão: admin / Senha: admin")
+    st.markdown('<div class="login-footer">© Studio ERP</div>', unsafe_allow_html=True)
     st.markdown('</div></div>', unsafe_allow_html=True)
     st.stop()
 
-# --------------- SIDEBAR ---------------
+# ---------------- SIDEBAR ----------------
 with st.sidebar:
     if "logo_img" in st.session_state:
         st.image(st.session_state["logo_img"], width=150)
@@ -329,7 +327,7 @@ with st.sidebar:
     else:
         st.image("https://via.placeholder.com/150x100.png?text=LOGO", width=150)
 
-    st.write("📎 **Importar nova logo:**")
+    st.write("📎 **Importar logo**")
     upl = st.file_uploader("Importar Logo", type=["png","jpg","jpeg"], key="logo_upload")
     if upl:
         b = upl.read()
@@ -351,7 +349,8 @@ with st.sidebar:
 menu = st.session_state.get("menu", "Início")
 st.title(f"🧭 {menu}")
 
-# --------------- PÁGINAS ---------------
+# ---------------- PÁGINAS ----------------
+# Início
 if menu == "Início":
     st.subheader("📅 Agendamentos do Período")
     data_inicio = st.date_input("De", date.today(), format="DD/MM/YYYY", key="home_de")
@@ -363,27 +362,27 @@ if menu == "Início":
         ags = cursor.execute("""
             SELECT a.id, c.nome, a.data, a.hora, a.servicos, a.status, c.telefone
             FROM agendamentos a JOIN clientes c ON a.cliente_id=c.id
-            WHERE a.data BETWEEN ? AND ? ORDER BY a.data, a.hora
+            WHERE a.cancelada=0 AND a.data BETWEEN ? AND ? ORDER BY a.data, a.hora
         """, (a,b)).fetchall()
         if ags:
             for ag in ags:
                 msg = urllib.parse.quote(f"Olá {ag[1]}, confirmando seu agendamento em {data_br(ag[2])} às {ag[3]}.")
                 tel = ''.join([d for d in (ag[6] or "") if d.isdigit()])
                 wa = f"https://wa.me/55{tel}?text={msg}" if tel else None
-                col = st.columns([6,1])
-                col[0].info(f"📅 {data_br(ag[2])} 🕒 {ag[3]} | 👤 {ag[1]} | 📌 Status: {ag[5]} | 💼 {ag[4]}")
-                if wa:
-                    col[1].markdown(f"[WhatsApp](%s)" % wa)
+                cols = st.columns([6,1])
+                cols[0].info(f"📅 {data_br(ag[2])} 🕒 {ag[3]} | 👤 {ag[1]} | 📌 Status: {ag[5]} | 💼 {ag[4]}")
+                if wa: cols[1].markdown(f"[WhatsApp]({wa})")
         else:
             st.warning("Nenhum agendamento no período.")
 
+# Dashboard
 elif menu == "Dashboard":
     st.subheader("📊 Visão Geral")
     total_clientes = cursor.execute("SELECT COUNT(*) FROM clientes").fetchone()[0]
     total_vendas = cursor.execute("SELECT COUNT(*) FROM vendas WHERE cancelada=0").fetchone()[0]
     total_produtos = cursor.execute("SELECT COUNT(*) FROM produtos").fetchone()[0]
     total_servicos = cursor.execute("SELECT COUNT(*) FROM servicos").fetchone()[0]
-    total_despesas = cursor.execute("SELECT COALESCE(SUM(valor_total),0) FROM despesas").fetchone()[0]
+    total_despesas = cursor.execute("SELECT COALESCE(SUM(valor_total),0) FROM despesas WHERE cancelada=0").fetchone()[0]
     total_faturamento = cursor.execute("SELECT COALESCE(SUM(total),0) FROM vendas WHERE cancelada=0").fetchone()[0]
     lucro = total_faturamento - total_despesas
 
@@ -396,6 +395,7 @@ elif menu == "Dashboard":
     st.metric("💸 Despesas", moeda(total_despesas))
     st.metric("📈 Lucro", moeda(lucro))
 
+# Cadastro Cliente (com editar/excluir/visualizar)
 elif menu == "Cadastro Cliente":
     st.subheader("🧍 Cadastro de Clientes")
     try:
@@ -419,7 +419,7 @@ elif menu == "Cadastro Cliente":
     assinatura_bytes = None
     if has_canvas:
         canvas = st_canvas(stroke_width=2, stroke_color="#000000", background_color="#FFFFFF",
-                           height=150, width=300, drawing_mode="freedraw", key="canvas_sig_v51")
+                           height=150, width=300, drawing_mode="freedraw", key="canvas_sig_v54")
         if canvas.image_data is not None:
             import numpy as np
             from PIL import Image
@@ -446,21 +446,55 @@ elif menu == "Cadastro Cliente":
                   int(cirurgia_flag), cirurgia_desc.strip() if cirurgia_flag else "",
                   int(autoriza_imagem), assinatura_bytes, foto_bytes))
             conn.commit()
-            st.success("Cliente salvo!")
+            st.success("Cliente salvo!"); st.rerun()
         else:
             st.error("Informe o nome.")
 
-    dfc = pd.read_sql_query("""
-        SELECT id, nome, telefone, email, endereco, 
-               CASE alergia_flag WHEN 1 THEN 'Sim' ELSE 'Não' END AS alergia,
-               CASE cirurgia_flag WHEN 1 THEN 'Sim' ELSE 'Não' END AS cirurgia,
-               CASE autoriza_imagem WHEN 1 THEN 'Sim' ELSE 'Não' END AS autoriza
-        FROM clientes ORDER BY id DESC
-    """, conn)
-    st.dataframe(dfc, use_container_width=True)
+    # Lista com ações
+    st.write("### Clientes")
+    rows = cursor.execute("SELECT id, nome, telefone, email, endereco FROM clientes ORDER BY id DESC").fetchall()
+    for cid, cnome, ctel, cmail, cend in rows:
+        cols = st.columns([6,1,1,1])
+        cols[0].write(f"**{cnome}**  \n📞 {ctel or '-'}  |  ✉️ {cmail or '-'}  |  📍 {cend or '-'}")
+        if cols[1].button("👁️", key=f"cli_view_{cid}"):
+            foto = cursor.execute("SELECT foto FROM clientes WHERE id=?", (cid,)).fetchone()
+            st.session_state[f"view_cli_{cid}"] = foto[0] if foto else None
+        if cols[2].button("✏️", key=f"cli_edit_{cid}"):
+            st.session_state["edit_cli"] = cid
+        if cols[3].button("❌", key=f"cli_del_{cid}"):
+            cursor.execute("DELETE FROM clientes WHERE id=?", (cid,)); conn.commit(); st.warning("Cliente excluído."); st.rerun()
 
+        if st.session_state.get(f"view_cli_{cid}") is not None:
+            with st.expander(f"Visualizar: {cnome}", expanded=True):
+                foto_bytes = st.session_state.get(f"view_cli_{cid}")
+                if foto_bytes:
+                    st.image(foto_bytes, width=120)
+                else:
+                    st.info("Sem foto cadastrada.")
+
+        if st.session_state.get("edit_cli") == cid:
+            with st.expander(f"Editar: {cnome}", expanded=True):
+                rn = cursor.execute("SELECT nome, telefone, email, endereco FROM clientes WHERE id=?", (cid,)).fetchone()
+                en = st.text_input("Nome", value=rn[0], key=f"en_cli_{cid}")
+                et = st.text_input("Telefone", value=rn[1], key=f"et_cli_{cid}")
+                em = st.text_input("E-mail", value=rn[2], key=f"em_cli_{cid}")
+                ee = st.text_input("Endereço", value=rn[3], key=f"ee_cli_{cid}")
+                cbt = st.columns(2)
+                if cbt[0].button("Salvar", key=f"s_cli_{cid}"):
+                    cursor.execute("UPDATE clientes SET nome=?, telefone=?, email=?, endereco=? WHERE id=?", (en.strip(), et.strip(), em.strip(), ee.strip(), cid))
+                    conn.commit(); st.success("Cliente atualizado."); st.session_state["edit_cli"]=None; st.rerun()
+                if cbt[1].button("Cancelar", key=f"c_cli_{cid}"):
+                    st.session_state["edit_cli"]=None; st.rerun()
+
+# Cadastro Empresa
 elif menu == "Cadastro Empresa":
     st.subheader("🏢 Cadastro da Empresa")
+    def get_empresa():
+        row = cursor.execute("SELECT COALESCE(nome,''), COALESCE(cnpj,''), COALESCE(telefone,'') FROM empresa WHERE id=1").fetchone()
+        if row:
+            return {"nome":row[0], "cnpj":row[1], "telefone":row[2]}
+        else:
+            return {"nome":"", "cnpj":"", "telefone":""}
     emp = get_empresa()
     nome = st.text_input("Nome da empresa", value=emp.get("nome",""), key="emp_nome")
     cnpj = st.text_input("CNPJ", value=emp.get("cnpj",""), key="emp_cnpj")
@@ -473,6 +507,7 @@ elif menu == "Cadastro Empresa":
         conn.commit()
         st.success("Empresa salva/atualizada!")
 
+# Cadastro Produtos (com histórico e editar/excluir)
 elif menu == "Cadastro Produtos":
     st.subheader("📦 Produtos")
     if "edit_prod_id" not in st.session_state:
@@ -545,6 +580,7 @@ elif menu == "Cadastro Produtos":
                         if cols[1].button("Cancelar", key=f"cancel_{pid}"):
                             st.session_state.edit_prod_id = None; st.rerun()
 
+# Cadastro Serviços
 elif menu == "Cadastro Serviços":
     st.subheader("💆 Serviços")
     col1,col2 = st.columns([1,2])
@@ -590,10 +626,11 @@ elif menu == "Cadastro Serviços":
         else:
             st.info("Nenhum serviço cadastrado.")
 
+# Agendamento (cancelar, reagendar, WhatsApp no histórico)
 elif menu == "Agendamento":
     st.subheader("📅 Agendamentos")
-    clientes = cursor.execute("SELECT id, nome FROM clientes ORDER BY nome").fetchall()
-    d_cli = {c[1]: c[0] for c in clientes}
+    clientes = cursor.execute("SELECT id, nome, telefone FROM clientes ORDER BY nome").fetchall()
+    d_cli = {c[1]: (c[0], c[2]) for c in clientes}
     servicos = cursor.execute("SELECT id, nome FROM servicos ORDER BY nome").fetchall()
     nomes_serv = [s[1] for s in servicos]
 
@@ -608,40 +645,81 @@ elif menu == "Agendamento":
             elif not hora: st.error("Informe a hora.")
             else:
                 cursor.execute("""
-                    INSERT INTO agendamentos (cliente_id, data, hora, servicos, status)
-                    VALUES (?,?,?,?, 'Agendado')
-                """, (d_cli[cliente_nome], data_ag.strftime("%Y-%m-%d"), hora, ", ".join(serv_sel)))
+                    INSERT INTO agendamentos (cliente_id, data, hora, servicos, status, cancelada)
+                    VALUES (?,?,?,?, 'Agendado', 0)
+                """, (d_cli[cliente_nome][0], data_ag.strftime("%Y-%m-%d"), hora, ", ".join(serv_sel)))
                 conn.commit(); st.success("Agendamento salvo!"); st.rerun()
     with col2:
-        df_ag = pd.read_sql_query("""
-            SELECT a.id, c.nome AS cliente, a.data, a.hora, a.servicos, a.status
-            FROM agendamentos a JOIN clientes c ON a.cliente_id=c.id
-            ORDER BY a.data, a.hora
-        """, conn)
-        st.dataframe(df_ag, use_container_width=True)
+        st.write("### Histórico / Gerenciar")
+        de = st.date_input("De", date.today(), key="ag_hist_de")
+        ate = st.date_input("Até", date.today(), key="ag_hist_ate")
+        if de > ate:
+            st.error("Data inicial maior que final.")
+        else:
+            df_ag = pd.read_sql_query(f"""
+                SELECT a.id, c.nome AS cliente, c.telefone, a.data, a.hora, a.servicos, a.status
+                FROM agendamentos a JOIN clientes c ON a.cliente_id=c.id
+                WHERE a.cancelada=0 AND date(a.data) BETWEEN '{de:%Y-%m-%d}' AND '{ate:%Y-%m-%d}'
+                ORDER BY a.data, a.hora
+            """, conn)
+            if df_ag.empty:
+                st.info("Sem agendamentos no período.")
+            else:
+                for _, row in df_ag.iterrows():
+                    cols = st.columns([5,1,1,1])
+                    tel = ''.join([d for d in (row['telefone'] or "") if d.isdigit()])
+                    msg = urllib.parse.quote(f"Olá {row['cliente']}, confirmando seu agendamento em {data_br(row['data'])} às {row['hora']}.")
+                    wa = f"https://wa.me/55{tel}?text={msg}" if tel else None
+                    wa_link = f"[WhatsApp]({wa})" if wa else "—"
+                    cols[0].info(f"{row['cliente']} | {data_br(row['data'])} {row['hora']} | {row['servicos']} | {row['status']}  •  {wa_link}")
+                    # Reagendar
+                    if cols[1].button("↻", key=f"ag_re_{row['id']}"):
+                        st.session_state[f"reag_{row['id']}"] = True
+                    # Cancelar
+                    if cols[2].button("❌", key=f"ag_cx_{row['id']}"):
+                        cursor.execute("UPDATE agendamentos SET cancelada=1, status='Cancelado' WHERE id=?", (int(row['id']),)); conn.commit(); st.warning("Agendamento cancelado."); st.rerun()
+                    # Pré-venda a partir do agendamento (atalho)
+                    if cols[3].button("💰", key=f"ag_to_v_{row['id']}"):
+                        st.session_state["menu"] = "Vendas"
+                        st.session_state["preset_cliente_id"] = cursor.execute("SELECT cliente_id FROM agendamentos WHERE id=?", (int(row['id']),)).fetchone()[0]
+                        st.experimental_rerun()
 
+                    if st.session_state.get(f"reag_{row['id']}"):
+                        with st.expander("Reagendar", expanded=True):
+                            nd = st.date_input("Nova data", value=date.today(), key=f"re_d_{row['id']}")
+                            nh = st.text_input("Nova hora", value=row['hora'], key=f"re_h_{row['id']}")
+                            if st.button("Salvar nova data/hora", key=f"re_s_{row['id']}"):
+                                cursor.execute("UPDATE agendamentos SET data=?, hora=?, status='Reagendado' WHERE id=?",
+                                               (nd.strftime("%Y-%m-%d"), nh, int(row['id'])))
+                                conn.commit(); st.success("Reagendado!"); st.session_state[f"reag_{row['id']}"]=False; st.rerun()
+
+# Vendas
 elif menu == "Vendas":
     st.subheader("💰 Painel de Vendas")
-
     st.markdown("""
-        <style>
-        .card {border:1px solid #eee; border-radius:14px; padding:14px; box-shadow:0 4px 18px rgba(0,0,0,.05);}
-        .title {font-weight:700; margin-bottom:8px;}
-        </style>
+        <style>.card {border:1px solid #eee; border-radius:14px; padding:14px; box-shadow:0 4px 18px rgba(0,0,0,.05);}
+        .title {font-weight:700; margin-bottom:8px;}</style>
     """, unsafe_allow_html=True)
 
     if "carrinho" not in st.session_state: st.session_state.carrinho = []
+    st.session_state.setdefault("preset_cliente_id", None)
 
     with st.container():
         colA, colB = st.columns([1,1])
         with colA:
             st.markdown('<div class="card"><div class="title">Origem da venda</div>', unsafe_allow_html=True)
-            modo = st.radio("", ["Nova venda", "Carregar de agendamento"], horizontal=True, key="modo_venda_v51")
+            modo = st.radio("", ["Nova venda", "Carregar de agendamento"], horizontal=True, key="modo_venda_v54")
             st.markdown('</div>', unsafe_allow_html=True)
         with colB:
             clientes = cursor.execute("SELECT id, nome FROM clientes ORDER BY nome").fetchall()
             nomes_cli = ["Selecione..."] + [c[1] for c in clientes]
-            idxc = st.selectbox("Cliente", range(len(nomes_cli)), format_func=lambda i: nomes_cli[i], key="cli_venda_v51")
+            idxc = 0
+            if st.session_state["preset_cliente_id"]:
+                try:
+                    idxc = [c[0] for c in clientes].index(st.session_state["preset_cliente_id"]) + 1
+                except ValueError:
+                    idxc = 0
+            idxc = st.selectbox("Cliente", range(len(nomes_cli)), format_func=lambda i: nomes_cli[i], key="cli_venda_v54", index=idxc)
             cliente_id = None if idxc==0 else clientes[idxc-1][0]
 
     produtos = cursor.execute("SELECT id, cod, nome, preco_venda, quantidade FROM produtos ORDER BY nome").fetchall()
@@ -649,19 +727,23 @@ elif menu == "Vendas":
 
     if modo == "Carregar de agendamento":
         ags = cursor.execute("""
-            SELECT a.id, c.nome, a.servicos
+            SELECT a.id, a.cliente_id, c.nome, a.servicos
             FROM agendamentos a JOIN clientes c ON a.cliente_id=c.id
+            WHERE a.cancelada=0
             ORDER BY a.id DESC LIMIT 200
         """).fetchall()
         if ags:
-            label_map = {f"#{i[0]} - {i[1]} - {i[2]}": i for i in ags}
+            label_map = {f"#{i[0]} - {i[2]} - {i[3]}": i for i in ags}
             escolha = st.selectbox("Agendamento", list(label_map.keys()), key="vend_ag_sel")
             if st.button("Carregar pré-venda do agendamento", key="vend_ag_load"):
-                _, nome_cli, lista_serv = label_map[escolha]
+                ag_id, cli_id, nome_cli, lista_serv = label_map[escolha]
+                st.session_state["preset_cliente_id"] = cli_id  # predefine cliente
+                st.session_state["carrinho"].clear()
                 for s in servicos:
                     if s[1] in (lista_serv or ""):
                         st.session_state.carrinho.append({"tipo":"servico","id":s[0],"nome":s[1],"qtd":1,"preco":float(s[2] or 0.0)})
-                st.success("Pré-venda carregada. Complete com produtos se quiser.")
+                st.success("Pré-venda carregada. Cliente pré-selecionado.")
+                st.experimental_rerun()
         else:
             st.info("Sem agendamentos.")
 
@@ -671,8 +753,8 @@ elif menu == "Vendas":
             nomes = [f"{p[2]} (COD: {p[1] or '-'})  |  Estoque: {p[4]}" for p in produtos]
             sel = st.selectbox("Produto", nomes, key="vend_prod_sel")
             idx = nomes.index(sel); p = produtos[idx]
-            qtd = st.number_input("Qtd", min_value=1, step=1, value=1, key="vend_qtdp_v51")
-            preco = st.number_input("Preço (R$)", min_value=0.0, step=0.5, value=float(p[3] or 0.0), format="%.2f", key="vend_pp_v51")
+            qtd = st.number_input("Qtd", min_value=1, step=1, value=1, key="vend_qtdp_v54")
+            preco = st.number_input("Preço (R$)", min_value=0.0, step=0.5, value=float(p[3] or 0.0), format="%.2f", key="vend_pp_v54")
             if st.button("Adicionar produto", key="vend_add_prod"):
                 st.session_state.carrinho.append({"tipo":"produto","id":p[0],"nome":p[2],"qtd":int(qtd),"preco":float(preco)}); st.success("Adicionado.")
         else: st.info("Cadastre produtos.")
@@ -681,8 +763,8 @@ elif menu == "Vendas":
             nomes = [f"{s[1]} (R$ {s[2]:.2f})" for s in servicos]
             sel = st.selectbox("Serviço", nomes, key="vend_srv_sel")
             idx = nomes.index(sel); s = servicos[idx]
-            qtd = st.number_input("Qtd", min_value=1, step=1, value=1, key="vend_qtds_v51")
-            preco = st.number_input("Preço (R$)", min_value=0.0, step=0.5, value=float(s[2] or 0.0), format="%.2f", key="vend_ps_v51")
+            qtd = st.number_input("Qtd", min_value=1, step=1, value=1, key="vend_qtds_v54")
+            preco = st.number_input("Preço (R$)", min_value=0.0, step=0.5, value=float(s[2] or 0.0), format="%.2f", key="vend_ps_v54")
             if st.button("Adicionar serviço", key="vend_add_srv"):
                 st.session_state.carrinho.append({"tipo":"servico","id":s[0],"nome":s[1],"qtd":int(qtd),"preco":float(preco)}); st.success("Adicionado.")
         else: st.info("Cadastre serviços.")
@@ -722,7 +804,7 @@ elif menu == "Vendas":
                     if pdf_bytes:
                         st.download_button("Baixar comprovante (PDF)", data=pdf_bytes, file_name=f"comprovante_venda_{venda_id}.pdf", mime="application/pdf", key=f"pdf_{venda_id}")
                     else:
-                        st.warning(f"PDF não gerado: {err}")
+                        st.warning(f"PDF não gerado: {err}. Instale com: pip install reportlab")
                     st.success(f"Venda #{venda_id} finalizada!"); st.session_state.carrinho = []
 
     st.markdown("---")
@@ -767,10 +849,12 @@ elif menu == "Vendas":
                     cursor.execute("UPDATE vendas SET cancelada=1 WHERE id=?", (v[0],))
                     conn.commit(); st.warning(f"Venda #{v[0]} cancelada."); st.rerun()
 
+# Despesas (com escolha de captura, filtro e cancelar)
 elif menu == "Despesas":
     st.subheader("💸 Despesas / Notas de Entrada")
     aba_prod, aba_serv = st.tabs(["Nota de Produtos", "Nota de Serviços"])
 
+    # ----------- Nota de Produtos -----------
     with aba_prod:
         if "despesa_itens" not in st.session_state:
             st.session_state.despesa_itens = []
@@ -785,11 +869,15 @@ elif menu == "Despesas":
         c1 = st.columns(2)
         fornecedor_endereco = c1[0].text_input("Endereço", key="np_for_end")
         chave_nfe_text = c1[1].text_input("Chave NFe (se preferir digitar)", key="np_chave_text")
-        st.write("Anexar imagem do QR-Code / chave da nota (opcional)")
-        chave_img = st.camera_input("Escanear com a câmera (opcional)", key="np_chave_cam")
-        if not chave_img:
-            chave_img = st.file_uploader("Ou enviar a imagem", type=["png","jpg","jpeg"], key="np_chave_up")
-        chave_img_bytes = chave_img.getvalue() if chave_img else None
+
+        metodo = st.radio("Como deseja anexar a nota?", ["Nenhum", "Câmera", "Arquivo"], horizontal=True, key="np_metodo")
+        chave_img_bytes = None
+        if metodo == "Câmera":
+            cam = st.camera_input("Escanear com a câmera (opcional)", key="np_cam")
+            if cam: chave_img_bytes = cam.getvalue()
+        elif metodo == "Arquivo":
+            upf = st.file_uploader("Enviar imagem/arquivo", type=["png","jpg","jpeg","pdf"], key="np_up")
+            if upf: chave_img_bytes = upf.read()
 
         st.markdown("#### Itens da Nota (Produtos)")
         cols = st.columns([2,3,1,2,2,2])
@@ -830,8 +918,8 @@ elif menu == "Despesas":
                     st.error("Informe o número da nota.")
                 else:
                     cursor.execute("""
-                        INSERT INTO despesas (tipo_nota, numero_nota, data_compra, fornecedor_nome, fornecedor_cnpj, fornecedor_endereco, fornecedor_telefone, chave_nfe_text, chave_nfe_img, valor_total)
-                        VALUES ('Produtos',?,?,?,?,?,?,?,?,?)
+                        INSERT INTO despesas (tipo_nota, numero_nota, data_compra, fornecedor_nome, fornecedor_cnpj, fornecedor_endereco, fornecedor_telefone, chave_nfe_text, chave_nfe_img, valor_total, cancelada)
+                        VALUES ('Produtos',?,?,?,?,?,?,?,?,?,0)
                     """, (numero_nota.strip(), data_compra.strftime("%Y-%m-%d"),
                           fornecedor_nome.strip(), fornecedor_cnpj.strip(), fornecedor_endereco.strip(), fornecedor_telefone.strip(),
                           chave_nfe_text.strip(), chave_img_bytes, total_desp))
@@ -848,18 +936,28 @@ elif menu == "Despesas":
                     st.success(f"Nota de Produtos #{numero_nota} salva. Estoque atualizado para itens de Revenda.")
 
         st.markdown("----")
-        st.write("### Histórico de Notas (Produtos)")
-        df_hist = pd.read_sql_query("""
-            SELECT id, numero_nota, data_compra AS data, fornecedor_nome, valor_total
-            FROM despesas WHERE tipo_nota='Produtos' ORDER BY id DESC
-        """, conn)
-        if not df_hist.empty:
-            df_hist["data"] = df_hist["data"].apply(data_br)
-            df_hist["valor_total"] = df_hist["valor_total"].apply(moeda)
-            st.dataframe(df_hist, use_container_width=True)
+        st.write("### Histórico + Filtro + Cancelar")
+        de = st.date_input("De", date.today(), key="np_de")
+        ate = st.date_input("Até", date.today(), key="np_ate")
+        if de > ate:
+            st.error("Data inicial maior que final.")
         else:
-            st.info("Sem notas de produtos cadastradas.")
+            df_hist = pd.read_sql_query(f"""
+                SELECT id, numero_nota, data_compra AS data, fornecedor_nome, valor_total
+                FROM despesas WHERE cancelada=0 AND tipo_nota='Produtos'
+                  AND date(COALESCE(data_compra, '1970-01-01')) BETWEEN '{de:%Y-%m-%d}' AND '{ate:%Y-%m-%d}'
+                ORDER BY id DESC
+            """, conn)
+            if not df_hist.empty:
+                for _, r in df_hist.iterrows():
+                    colsH = st.columns([6,1])
+                    colsH[0].write(f"**Nota #{r['numero_nota']}** | {data_br(r['data'])} | {r['fornecedor_nome']} | Total {moeda(r['valor_total'])}")
+                    if colsH[1].button("❌ Cancelar", key=f"np_cx_{int(r['id'])}"):
+                        cursor.execute("UPDATE despesas SET cancelada=1 WHERE id=?", (int(r['id']),)); conn.commit(); st.warning("Nota cancelada."); st.rerun()
+            else:
+                st.info("Sem notas nesse período.")
 
+    # ----------- Nota de Serviços -----------
     with aba_serv:
         if "despesa_serv_itens" not in st.session_state:
             st.session_state.despesa_serv_itens = []
@@ -906,8 +1004,8 @@ elif menu == "Despesas":
                     st.error("Informe o número da nota.")
                 else:
                     cursor.execute("""
-                        INSERT INTO despesas (tipo_nota, numero_nota, data_emissao, data_entrada, fornecedor_nome, fornecedor_cnpj, valor_total, descricao)
-                        VALUES ('Serviços',?,?,?,?,?,?,?)
+                        INSERT INTO despesas (tipo_nota, numero_nota, data_emissao, data_entrada, fornecedor_nome, fornecedor_cnpj, valor_total, descricao, cancelada)
+                        VALUES ('Serviços',?,?,?,?,?,?,?,0)
                     """, (numero_nota_s.strip(), data_emissao.strftime("%Y-%m-%d"), data_entrada.strftime("%Y-%m-%d"),
                           fornecedor_nome_s.strip(), fornecedor_cnpj_s.strip(), total2, desc_geral.strip()))
                     desp_id = cursor.lastrowid
@@ -920,6 +1018,29 @@ elif menu == "Despesas":
                     st.session_state.despesa_serv_itens = []
                     st.success(f"Nota de Serviços #{numero_nota_s} salva.")
 
+        st.markdown("----")
+        st.write("### Histórico + Filtro + Cancelar")
+        de = st.date_input("De", date.today(), key="ns_de")
+        ate = st.date_input("Até", date.today(), key="ns_ate")
+        if de > ate:
+            st.error("Data inicial maior que final.")
+        else:
+            df_hist2 = pd.read_sql_query(f"""
+                SELECT id, numero_nota, data_emissao AS data, fornecedor_nome, valor_total
+                FROM despesas WHERE cancelada=0 AND tipo_nota='Serviços'
+                  AND date(COALESCE(data_emissao, '1970-01-01')) BETWEEN '{de:%Y-%m-%d}' AND '{ate:%Y-%m-%d}'
+                ORDER BY id DESC
+            """, conn)
+            if not df_hist2.empty:
+                for _, r in df_hist2.iterrows():
+                    colsH = st.columns([6,1])
+                    colsH[0].write(f"**Nota #{r['numero_nota']}** | {data_br(r['data'])} | {r['fornecedor_nome']} | Total {moeda(r['valor_total'])}")
+                    if colsH[1].button("❌ Cancelar", key=f"ns_cx_{int(r['id'])}"):
+                        cursor.execute("UPDATE despesas SET cancelada=1 WHERE id=?", (int(r['id']),)); conn.commit(); st.warning("Nota cancelada."); st.rerun()
+            else:
+                st.info("Sem notas nesse período.")
+
+# Relatórios
 elif menu == "Relatórios":
     st.subheader("📊 Relatórios")
     emp = get_empresa()
@@ -956,7 +1077,7 @@ elif menu == "Relatórios":
             df = pd.read_sql_query(f"""
                 SELECT id, tipo_nota, numero_nota,
                        COALESCE(data_compra, COALESCE(data_emissao, data_entrada)) AS data,
-                       fornecedor_nome, valor_total
+                       fornecedor_nome, valor_total, cancelada
                 FROM despesas
                 WHERE date(COALESCE(data_compra, COALESCE(data_emissao, data_entrada))) BETWEEN '{de:%Y-%m-%d}' AND '{ate:%Y-%m-%d}'
                 ORDER BY id DESC
@@ -977,6 +1098,7 @@ elif menu == "Relatórios":
         st.dataframe(df, use_container_width=True)
         st.download_button("Exportar CSV", data=df.to_csv(index=False).encode("utf-8"), file_name="relatorio_produtos.csv", mime="text/csv", key="rep_p_csv")
 
+# Backup
 elif menu == "Backup":
     st.subheader("💾 Backup")
     c1,c2 = st.columns(2)
@@ -1000,6 +1122,7 @@ elif menu == "Backup":
             except Exception as e:
                 st.error(f"Falha ao importar: {e}")
 
+# Sair
 elif menu == "Sair":
     st.session_state.clear()
     st.success("Sessão encerrada.")
