@@ -307,7 +307,7 @@ if not st.session_state.login:
         if cursor.execute("SELECT 1 FROM usuarios WHERE usuario=? AND senha=?", (usuario_input, senha_input)).fetchone():
             st.session_state.login = True
             st.session_state["menu"] = "Início"
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("Usuário ou senha inválidos")
     if c2.button("Esqueci", key="login_forgot"):
