@@ -28,7 +28,7 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const result = await login(formData.email, formData.password);
+      const result = await login(formData.email, formData.password, formData.subdomain);
       if (result.success) {
         toast.success('Login realizado com sucesso!');
       } else {
