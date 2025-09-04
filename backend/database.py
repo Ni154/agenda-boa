@@ -209,6 +209,28 @@ class Agendamento(Base):
     cliente = relationship("Cliente", back_populates="agendamentos")
     servico = relationship("Servico")
 
+class Vencimento(Base):
+    __tablename__ = "vencimentos"
+    
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tipo = Column(String(100), nullable=False)  # "plano", "certificado", "licenca", etc
+    descricao = Column(String(500))
+    data_vencimento = Column(DateTime(timezone=True), nullable=False)
+    valor = Column(Float, default=0.0)
+    status = Column(String(20), default="ativo")  # ativo, vencido, renovado, cancelado
+    notificado_email = Column(Boolean, default=False)
+    email_notificacao = Column(String(100))
+    dias_antecedencia = Column(Integer, default=30)  # dias para notificar antes do vencimento
+    
+    # Multi-tenant
+    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
+    
+    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    
+    # Relationships
+    tenant = relationship("Tenant")
+
 # Database dependency
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
