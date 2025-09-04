@@ -545,6 +545,135 @@ async def get_me(current_user: User = Depends(get_current_user)):
         is_active=current_user.is_active
     )
 
+# User Management Routes
+@api_router.post("/users", response_model=UserResponse)
+async def create_user(user_data: UserCreate, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN_EMPRESA]:
+        raise HTTPException(status_code=403, detail="Only administrators can create users")
+    
+    # Check if email already exists for this tenant
+    existing_user = db.query(User).filter(
+        User.email == user_data.email,
+        User.tenant_id == (tenant.id if tenant else None)
+    ).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_password = get_password_hash(user_data.password)
+    user = User(
+        email=user_data.email,
+        name=user_data.name,
+        hashed_password=hashed_password,
+        role=user_data.role,
+        tenant_id=tenant.id if tenant else None
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        name=user.name,
+        role=user.role,
+        tenant_id=str(user.tenant_id) if user.tenant_id else None,
+        is_active=user.is_active
+    )
+
+@api_router.get("/users", response_model=List[UserResponse])
+async def get_users(current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN_EMPRESA]:
+        raise HTTPException(status_code=403, detail="Only administrators can view users")
+    
+    if current_user.role == UserRole.SUPER_ADMIN:
+        users = db.query(User).all()
+    else:
+        users = db.query(User).filter(User.tenant_id == tenant.id).all()
+    
+    return [UserResponse(
+        id=str(user.id),
+        email=user.email,
+        name=user.name,
+        role=user.role,
+        tenant_id=str(user.tenant_id) if user.tenant_id else None,
+        is_active=user.is_active
+    ) for user in users]
+
+@api_router.put("/users/{user_id}", response_model=UserResponse)
+async def update_user(user_id: str, user_data: UserCreate, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN_EMPRESA]:
+        raise HTTPException(status_code=403, detail="Only administrators can update users")
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check tenant access
+    if current_user.role != UserRole.SUPER_ADMIN and user.tenant_id != tenant.id:
+        raise HTTPException(status_code=403, detail="Cannot access user from different tenant")
+    
+    user.name = user_data.name
+    user.email = user_data.email
+    user.role = user_data.role
+    if user_data.password:
+        user.hashed_password = get_password_hash(user_data.password)
+    
+    db.commit()
+    db.refresh(user)
+    
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        name=user.name,
+        role=user.role,
+        tenant_id=str(user.tenant_id) if user.tenant_id else None,
+        is_active=user.is_active
+    )
+
+@api_router.put("/users/{user_id}/toggle-status")
+async def toggle_user_status(user_id: str, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN_EMPRESA]:
+        raise HTTPException(status_code=403, detail="Only administrators can toggle user status")
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check tenant access
+    if current_user.role != UserRole.SUPER_ADMIN and user.tenant_id != tenant.id:
+        raise HTTPException(status_code=403, detail="Cannot access user from different tenant")
+    
+    # Cannot deactivate yourself
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
+    
+    user.is_active = not user.is_active
+    db.commit()
+    
+    return {"message": f"User {'activated' if user.is_active else 'deactivated'} successfully"}
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN_EMPRESA]:
+        raise HTTPException(status_code=403, detail="Only administrators can delete users")
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check tenant access
+    if current_user.role != UserRole.SUPER_ADMIN and user.tenant_id != tenant.id:
+        raise HTTPException(status_code=403, detail="Cannot access user from different tenant")
+    
+    # Cannot delete yourself
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    
+    db.delete(user)
+    db.commit()
+    
+    return {"message": "User deleted successfully"}
+
 # Dashboard Routes
 @api_router.get("/dashboard", response_model=Dashboard)
 async def get_dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
