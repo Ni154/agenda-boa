@@ -11,6 +11,8 @@ import Clientes from './components/Clientes';
 import Produtos from './components/Produtos';
 import Servicos from './components/Servicos';
 import Agendamentos from './components/Agendamentos';
+import Empresas from './components/Empresas';
+import Usuarios from './components/Usuarios';
 import Sidebar from './components/Sidebar';
 import { Toaster } from './components/ui/sonner';
 
