@@ -33,7 +33,7 @@ Base = declarative_base()
 class Tenant(Base):
     __tablename__ = "tenants"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     subdomain = Column(String(50), unique=True, nullable=False, index=True)
     company_name = Column(String(200), nullable=False)
     cnpj = Column(String(20), unique=True)
@@ -68,7 +68,7 @@ class Tenant(Base):
 class User(Base):
     __tablename__ = "users"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     email = Column(String(100), nullable=False, index=True)
     name = Column(String(100), nullable=False)
     hashed_password = Column(String(200), nullable=False)
@@ -76,7 +76,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     
     # Multi-tenant
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True)  # Null for super_admin
+    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=True)  # Null for super_admin
     
     # Password reset
     reset_token = Column(String(200))
@@ -97,7 +97,7 @@ class User(Base):
 class Cliente(Base):
     __tablename__ = "clientes"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     nome = Column(String(200), nullable=False)
     email = Column(String(100))
     telefone = Column(String(20))
@@ -107,7 +107,7 @@ class Cliente(Base):
     anamnese = Column(Text)
     
     # Multi-tenant
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
     
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
@@ -120,7 +120,7 @@ class Cliente(Base):
 class Produto(Base):
     __tablename__ = "produtos"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     codigo = Column(String(50))
     nome = Column(String(200), nullable=False)
     descricao = Column(Text)
@@ -132,7 +132,7 @@ class Produto(Base):
     estoque_minimo = Column(Integer, default=0)
     
     # Multi-tenant
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
     
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
@@ -143,7 +143,7 @@ class Produto(Base):
 class Servico(Base):
     __tablename__ = "servicos"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     nome = Column(String(200), nullable=False)
     descricao = Column(Text)
     duracao_minutos = Column(Integer, default=60)
@@ -151,7 +151,7 @@ class Servico(Base):
     tributacao_iss = Column(Text)  # JSON string
     
     # Multi-tenant
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
     
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
@@ -162,8 +162,8 @@ class Servico(Base):
 class Venda(Base):
     __tablename__ = "vendas"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    cliente_id = Column(UUID(as_uuid=True), ForeignKey("clientes.id"))
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
+    cliente_id = Column(IdType, ForeignKey("clientes.id"))
     cliente_nome = Column(String(200))
     itens = Column(Text, nullable=False)  # JSON string
     subtotal = Column(Float, nullable=False)
@@ -177,8 +177,8 @@ class Venda(Base):
     nota_pdf_url = Column(String(500))
     
     # Multi-tenant
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
-    vendedor_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
+    vendedor_id = Column(IdType, ForeignKey("users.id"), nullable=False)
     
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
@@ -191,15 +191,15 @@ class Venda(Base):
 class Agendamento(Base):
     __tablename__ = "agendamentos"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    cliente_id = Column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=False)
-    servico_id = Column(UUID(as_uuid=True), ForeignKey("servicos.id"), nullable=False)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
+    cliente_id = Column(IdType, ForeignKey("clientes.id"), nullable=False)
+    servico_id = Column(IdType, ForeignKey("servicos.id"), nullable=False)
     data_hora = Column(DateTime(timezone=True), nullable=False)
     status = Column(String(20), default="agendado")  # agendado, confirmado, realizado, cancelado
     observacoes = Column(Text)
     
     # Multi-tenant
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
     
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
