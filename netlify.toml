@@ -1,12 +1,12 @@
 [build]
   base = "frontend"
-  publish = "build"
   command = "npm ci && npm run build"
+  publish = "build"
 
 [build.environment]
   NODE_VERSION = "20"
 
-# Proxy só as chamadas de API para o backend do Railway:
+# Proxy API calls to Railway
 [[redirects]]
   from = "/api/*"
   to = "https://agenda-boa-production.up.railway.app/api/:splat"
