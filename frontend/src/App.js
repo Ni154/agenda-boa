@@ -14,6 +14,7 @@ import Agendamentos from './components/Agendamentos';
 import Empresas from './components/Empresas';
 import Usuarios from './components/Usuarios';
 import Sidebar from './components/Sidebar';
+import NotificacaoVencimento from './components/NotificacaoVencimento';
 import { Toaster } from './components/ui/sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
