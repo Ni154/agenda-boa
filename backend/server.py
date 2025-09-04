@@ -794,6 +794,50 @@ async def get_servicos(current_user: User = Depends(get_current_user), tenant: T
         ))
     return result
 
+@api_router.put("/servicos/{servico_id}", response_model=ServicoResponse)
+async def update_servico(servico_id: str, servico_data: ServicoCreate, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    servico = db.query(Servico).filter(Servico.id == servico_id, Servico.tenant_id == tenant.id).first()
+    if not servico:
+        raise HTTPException(status_code=404, detail="Servico not found")
+    
+    servico_dict = servico_data.dict()
+    if servico_dict['tributacao_iss']:
+        servico_dict['tributacao_iss'] = json.dumps(servico_dict['tributacao_iss'])
+    
+    for field, value in servico_dict.items():
+        setattr(servico, field, value)
+    
+    db.commit()
+    db.refresh(servico)
+    
+    tributacao_iss = None
+    if servico.tributacao_iss:
+        try:
+            tributacao_iss = json.loads(servico.tributacao_iss)
+        except:
+            pass
+    
+    return ServicoResponse(
+        id=str(servico.id),
+        nome=servico.nome,
+        descricao=servico.descricao,
+        duracao_minutos=servico.duracao_minutos,
+        preco=servico.preco,
+        tributacao_iss=tributacao_iss,
+        created_at=servico.created_at
+    )
+
+@api_router.delete("/servicos/{servico_id}")
+async def delete_servico(servico_id: str, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    servico = db.query(Servico).filter(Servico.id == servico_id, Servico.tenant_id == tenant.id).first()
+    if not servico:
+        raise HTTPException(status_code=404, detail="Servico not found")
+    
+    db.delete(servico)
+    db.commit()
+    
+    return {"message": "Servico deleted successfully"}
+
 # Venda Routes
 @api_router.post("/vendas", response_model=VendaResponse)
 async def create_venda(venda_data: VendaCreate, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
