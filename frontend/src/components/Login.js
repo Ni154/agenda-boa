@@ -104,8 +104,15 @@ const Login = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-medium text-slate-700">
+                <Label htmlFor="password" className="text-sm font-medium text-slate-700 flex items-center justify-between">
                   Senha
+                  <button
+                    type="button"
+                    onClick={() => setShowSubdomain(!showSubdomain)}
+                    className="text-xs text-emerald-600 hover:text-emerald-700"
+                  >
+                    {showSubdomain ? 'Ocultar empresa' : 'Login empresarial'}
+                  </button>
                 </Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
@@ -128,6 +135,28 @@ const Login = () => {
                   </button>
                 </div>
               </div>
+
+              {showSubdomain && (
+                <div className="space-y-2 animate-scale-in">
+                  <Label htmlFor="subdomain" className="text-sm font-medium text-slate-700">
+                    Empresa (Subdomínio)
+                  </Label>
+                  <div className="relative">
+                    <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+                    <Input
+                      id="subdomain"
+                      name="subdomain"
+                      value={formData.subdomain}
+                      onChange={handleChange}
+                      placeholder="minha-empresa"
+                      className="pl-10 h-12 border-slate-200 focus:border-emerald-500 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Deixe em branco para login como Super Admin
+                  </p>
+                </div>
+              )}
 
               <Button
                 type="submit"
