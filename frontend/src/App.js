@@ -151,6 +151,7 @@ const MainLayout = ({ children }) => {
         </header>
         <main className="flex-1 overflow-y-auto p-4 lg:p-8">
           {children}
+          <NotificacaoVencimento />
         </main>
       </div>
     </div>
