@@ -1215,5 +1215,38 @@ async def startup_event():
             db.add(super_admin)
             db.commit()
             logger.info("Super admin created")
+            
+        # Create sample vencimentos for demo purposes
+        sample_vencimentos_exist = db.query(Vencimento).first()
+        if not sample_vencimentos_exist:
+            from datetime import timedelta
+            hoje = datetime.now(timezone.utc)
+            
+            # Find or create a tenant for demo
+            sample_tenant = db.query(Tenant).first()
+            if sample_tenant:
+                sample_vencimentos = [
+                    Vencimento(
+                        tipo="Plano Premium",
+                        descricao="Renovação do plano premium mensal",
+                        data_vencimento=hoje + timedelta(days=7),
+                        valor=89.90,
+                        tenant_id=sample_tenant.id,
+                        email_notificacao="admin@empresa.com"
+                    ),
+                    Vencimento(
+                        tipo="Certificado Digital",
+                        descricao="Renovação do certificado digital A1",
+                        data_vencimento=hoje + timedelta(days=15),
+                        valor=150.00,
+                        tenant_id=sample_tenant.id,
+                        email_notificacao="admin@empresa.com"
+                    )
+                ]
+                
+                for vencimento in sample_vencimentos:
+                    db.add(vencimento)
+                db.commit()
+                logger.info("Sample vencimentos created")
     finally:
         db.close()
