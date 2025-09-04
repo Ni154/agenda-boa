@@ -547,7 +547,20 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 # Dashboard Routes
 @api_router.get("/dashboard", response_model=Dashboard)
-async def get_dashboard(current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+async def get_dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Super admin gets different dashboard
+    if current_user.role == UserRole.SUPER_ADMIN:
+        # Redirect to super admin dashboard
+        return await get_super_admin_dashboard(current_user, db)
+    
+    # Get tenant for regular users
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User not associated with any tenant")
+    
+    tenant = db.query(Tenant).filter(Tenant.id == current_user.tenant_id).first()
+    if not tenant or not tenant.is_active:
+        raise HTTPException(status_code=403, detail="Tenant account suspended")
+    
     # Calculate metrics for the tenant
     vendas = db.query(Venda).filter(Venda.tenant_id == tenant.id).all()
     produtos = db.query(Produto).filter(Produto.tenant_id == tenant.id).all()
