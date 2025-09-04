@@ -233,6 +233,17 @@ class SuperAdminDashboard(BaseModel):
     monthly_revenue: float
     recent_signups: List[Dict[str, Any]]
 
+class VencimentoResponse(BaseModel):
+    id: str
+    tenant_id: str
+    tipo: str
+    descricao: str
+    data_vencimento: datetime
+    valor: float
+    status: str
+    notificado_email: bool
+    created_at: datetime
+
 # Helper functions
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
