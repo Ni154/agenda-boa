@@ -1,19 +1,18 @@
 [build]
-  base = "frontend"
   command = "npm ci && npm run build"
   publish = "build"
 
 [build.environment]
   NODE_VERSION = "20"
 
-# Proxy API calls to Railway
+# Proxy para o Railway
 [[redirects]]
   from = "/api/*"
   to = "https://agenda-boa-production.up.railway.app/api/:splat"
   status = 200
   force = true
 
-# SPA fallback (CRA)
+# SPA fallback
 [[redirects]]
   from = "/*"
   to = "/index.html"
