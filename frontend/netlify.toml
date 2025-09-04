@@ -1,0 +1,19 @@
+[build]
+  command = "npm ci && npm run build"
+  publish = "build"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Proxy requests to the Railway backend
+[[redirects]]
+  from = "/api/*"
+  to = "https://agenda-boa-production.up.railway.app/api/:splat"
+  status = 200
+  force = true
+
+# Single Page App fallback (CRA)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
