@@ -1091,6 +1091,97 @@ async def get_agendamentos(current_user: User = Depends(get_current_user), tenan
         created_at=agendamento.created_at
     ) for agendamento in agendamentos]
 
+# Vencimento Routes
+@api_router.get("/vencimentos", response_model=List[VencimentoResponse])
+async def get_vencimentos(current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    vencimentos = db.query(Vencimento).filter(Vencimento.tenant_id == tenant.id).all()
+    return [VencimentoResponse(
+        id=str(vencimento.id),
+        tenant_id=str(vencimento.tenant_id),
+        tipo=vencimento.tipo,
+        descricao=vencimento.descricao,
+        data_vencimento=vencimento.data_vencimento,
+        valor=vencimento.valor,
+        status=vencimento.status,
+        notificado_email=vencimento.notificado_email,
+        created_at=vencimento.created_at
+    ) for vencimento in vencimentos]
+
+@api_router.get("/vencimentos/proximos")
+async def get_vencimentos_proximos(current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    """Retorna vencimentos nos próximos 30 dias"""
+    from datetime import datetime, timezone, timedelta
+    
+    hoje = datetime.now(timezone.utc)
+    em_30_dias = hoje + timedelta(days=30)
+    
+    vencimentos = db.query(Vencimento).filter(
+        Vencimento.tenant_id == tenant.id,
+        Vencimento.data_vencimento >= hoje,
+        Vencimento.data_vencimento <= em_30_dias,
+        Vencimento.status == "ativo"
+    ).all()
+    
+    return [VencimentoResponse(
+        id=str(vencimento.id),
+        tenant_id=str(vencimento.tenant_id),
+        tipo=vencimento.tipo,
+        descricao=vencimento.descricao,
+        data_vencimento=vencimento.data_vencimento,
+        valor=vencimento.valor,
+        status=vencimento.status,
+        notificado_email=vencimento.notificado_email,
+        created_at=vencimento.created_at
+    ) for vencimento in vencimentos]
+
+@api_router.post("/vencimentos/{vencimento_id}/notificar")
+async def enviar_notificacao_vencimento(vencimento_id: str, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    """Envia notificação por email sobre vencimento"""
+    vencimento = db.query(Vencimento).filter(
+        Vencimento.id == vencimento_id,
+        Vencimento.tenant_id == tenant.id
+    ).first()
+    
+    if not vencimento:
+        raise HTTPException(status_code=404, detail="Vencimento not found")
+    
+    # Calcula dias até vencimento
+    hoje = datetime.now(timezone.utc)
+    dias_restantes = (vencimento.data_vencimento - hoje).days
+    
+    # Prepara email
+    email_destino = vencimento.email_notificacao or current_user.email
+    assunto = f"Vencimento próximo: {vencimento.tipo}"
+    
+    conteudo_html = f"""
+    <h2>🚨 Vencimento Próximo</h2>
+    <p>Olá {current_user.name},</p>
+    <p>Você tem um vencimento próximo que requer atenção:</p>
+    
+    <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+        <h3 style="color: #dc2626;">{vencimento.tipo}</h3>
+        <p><strong>Descrição:</strong> {vencimento.descricao or 'N/A'}</p>
+        <p><strong>Data de Vencimento:</strong> {vencimento.data_vencimento.strftime('%d/%m/%Y')}</p>
+        <p><strong>Valor:</strong> R$ {vencimento.valor:,.2f}</p>
+        <p><strong>Dias restantes:</strong> {dias_restantes} dias</p>
+    </div>
+    
+    <p>Não esqueça de renovar antes do vencimento para evitar interrupções nos serviços.</p>
+    <p>Em caso de dúvidas, entre em contato com o suporte.</p>
+    """
+    
+    # Envia email
+    try:
+        send_email(email_destino, assunto, conteudo_html)
+        
+        # Marca como notificado
+        vencimento.notificado_email = True
+        db.commit()
+        
+        return {"message": "Notificação enviada com sucesso"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao enviar notificação: {str(e)}")
+
 # Include router
 app.include_router(api_router)
 
