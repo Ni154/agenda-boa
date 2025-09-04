@@ -705,6 +705,43 @@ async def get_produtos(current_user: User = Depends(get_current_user), tenant: T
         created_at=produto.created_at
     ) for produto in produtos]
 
+@api_router.put("/produtos/{produto_id}", response_model=ProdutoResponse)
+async def update_produto(produto_id: str, produto_data: ProdutoCreate, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    produto = db.query(Produto).filter(Produto.id == produto_id, Produto.tenant_id == tenant.id).first()
+    if not produto:
+        raise HTTPException(status_code=404, detail="Produto not found")
+    
+    for field, value in produto_data.dict().items():
+        setattr(produto, field, value)
+    
+    db.commit()
+    db.refresh(produto)
+    
+    return ProdutoResponse(
+        id=str(produto.id),
+        codigo=produto.codigo,
+        nome=produto.nome,
+        descricao=produto.descricao,
+        categoria=produto.categoria,
+        ncm=produto.ncm,
+        custo=produto.custo,
+        preco=produto.preco,
+        estoque_atual=produto.estoque_atual,
+        estoque_minimo=produto.estoque_minimo,
+        created_at=produto.created_at
+    )
+
+@api_router.delete("/produtos/{produto_id}")
+async def delete_produto(produto_id: str, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    produto = db.query(Produto).filter(Produto.id == produto_id, Produto.tenant_id == tenant.id).first()
+    if not produto:
+        raise HTTPException(status_code=404, detail="Produto not found")
+    
+    db.delete(produto)
+    db.commit()
+    
+    return {"message": "Produto deleted successfully"}
+
 # Servico Routes
 @api_router.post("/servicos", response_model=ServicoResponse)
 async def create_servico(servico_data: ServicoCreate, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
