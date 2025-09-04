@@ -12,10 +12,12 @@ const Login = () => {
   const { user, login } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
-    password: ''
+    password: '',
+    subdomain: ''
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showSubdomain, setShowSubdomain] = useState(false);
 
   if (user) {
     return <Navigate to="/" replace />;
