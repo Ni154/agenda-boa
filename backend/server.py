@@ -631,6 +631,41 @@ async def get_clientes(current_user: User = Depends(get_current_user), tenant: T
         created_at=cliente.created_at
     ) for cliente in clientes]
 
+@api_router.put("/clientes/{cliente_id}", response_model=ClienteResponse)
+async def update_cliente(cliente_id: str, cliente_data: ClienteCreate, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    cliente = db.query(Cliente).filter(Cliente.id == cliente_id, Cliente.tenant_id == tenant.id).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente not found")
+    
+    for field, value in cliente_data.dict().items():
+        setattr(cliente, field, value)
+    
+    db.commit()
+    db.refresh(cliente)
+    
+    return ClienteResponse(
+        id=str(cliente.id),
+        nome=cliente.nome,
+        email=cliente.email,
+        telefone=cliente.telefone,
+        cpf_cnpj=cliente.cpf_cnpj,
+        endereco=cliente.endereco,
+        foto_url=cliente.foto_url,
+        anamnese=cliente.anamnese,
+        created_at=cliente.created_at
+    )
+
+@api_router.delete("/clientes/{cliente_id}")
+async def delete_cliente(cliente_id: str, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    cliente = db.query(Cliente).filter(Cliente.id == cliente_id, Cliente.tenant_id == tenant.id).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente not found")
+    
+    db.delete(cliente)
+    db.commit()
+    
+    return {"message": "Cliente deleted successfully"}
+
 # Produto Routes
 @api_router.post("/produtos", response_model=ProdutoResponse)
 async def create_produto(produto_data: ProdutoCreate, current_user: User = Depends(get_current_user), tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
