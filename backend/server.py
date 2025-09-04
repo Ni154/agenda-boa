@@ -10,7 +10,7 @@ from jose import JWTError, jwt
 import os
 import logging
 import uuid
-import bcrypt
+
 from pathlib import Path
 from dotenv import load_dotenv
 
