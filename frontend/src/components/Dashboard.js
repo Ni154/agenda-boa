@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
+import SuperAdminDashboard from './SuperAdminDashboard';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { 
   DollarSign, 
@@ -14,7 +15,14 @@ import {
 import { toast } from 'sonner';
 
 const Dashboard = () => {
-  const { api } = useAuth();
+  const { api, user } = useAuth();
+  
+  // If super admin, show super admin dashboard
+  if (user?.role === 'super_admin') {
+    return <SuperAdminDashboard />;
+  }
+  
+  // Regular tenant dashboard
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
 
