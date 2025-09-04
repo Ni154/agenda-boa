@@ -1,7 +1,6 @@
 from sqlalchemy import create_engine, Column, String, DateTime, Boolean, Float, Integer, Text, ForeignKey, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
-from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime, timezone
 import uuid
 import os
@@ -11,18 +10,22 @@ DATABASE_URL = os.environ.get('DATABASE_URL')
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is required")
 
-DATABASE_URL = os.environ.get('DATABASE_URL')
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable is required")
-
 # Handle SQLite and PostgreSQL
-if DATABASE_URL.startswith("sqlite"):
+is_sqlite = DATABASE_URL.startswith("sqlite")
+
+if is_sqlite:
     engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args={"check_same_thread": False})
+    # Use String for SQLite (no UUID support)
+    IdType = String(36)
 elif DATABASE_URL.startswith("postgresql://"):
+    from sqlalchemy.dialects.postgresql import UUID
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    # Use UUID for PostgreSQL
+    IdType = UUID(as_uuid=True)
 else:
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    IdType = String(36)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
