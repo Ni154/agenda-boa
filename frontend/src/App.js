@@ -205,6 +205,20 @@ function App() {
                 </MainLayout>
               </ProtectedRoute>
             } />
+            <Route path="/empresas" element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <Empresas />
+                </MainLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/usuarios" element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <Usuarios />
+                </MainLayout>
+              </ProtectedRoute>
+            } />
           </Routes>
           <Toaster />
         </div>
