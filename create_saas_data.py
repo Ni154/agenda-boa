@@ -45,7 +45,7 @@ def create_saas_data():
         
         if not super_admin:
             super_admin = User(
-                id=uuid.uuid4(),
+                id=str(uuid.uuid4()),
                 email="admin@sistema.com",
                 name="Super Administrador",
                 hashed_password=pwd_context.hash("admin123"),
