@@ -41,15 +41,6 @@ const Login = () => {
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      email: '',
-      password: '',
-      subdomain: ''
-    });
-    setEditingCliente(null);
-  };
-
   const handleChange = (e) => {
     setFormData(prev => ({
       ...prev,
