@@ -1,7 +1,6 @@
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
@@ -16,11 +15,13 @@ import resend
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Import database
-from database import get_db, create_tables, Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, SessionLocal
-
+# Load environment variables FIRST
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# Import database AFTER loading env vars
+from sqlalchemy.orm import Session
+from database import get_db, create_tables, Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, SessionLocal
 
 # Create tables
 create_tables()
