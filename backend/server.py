@@ -21,7 +21,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 # Import database AFTER loading env vars
 from sqlalchemy.orm import Session
-from database import get_db, create_tables, Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, SessionLocal
+from database import get_db, create_tables, Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, Vencimento, SessionLocal
 
 # Create tables
 create_tables()
