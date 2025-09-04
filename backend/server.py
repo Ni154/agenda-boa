@@ -835,7 +835,8 @@ logger = logging.getLogger(__name__)
 @app.on_event("startup")
 async def startup_event():
     # Create super admin if not exists
-    with SessionLocal() as db:
+    db = SessionLocal()
+    try:
         super_admin = db.query(User).filter(
             User.email == os.environ.get('ADMIN_EMAIL', 'admin@sistema.com'),
             User.role == UserRole.SUPER_ADMIN
@@ -843,6 +844,7 @@ async def startup_event():
         
         if not super_admin:
             super_admin = User(
+                id=str(uuid.uuid4()),
                 email=os.environ.get('ADMIN_EMAIL', 'admin@sistema.com'),
                 name="Super Admin",
                 hashed_password=get_password_hash(os.environ.get('ADMIN_PASSWORD', 'admin123')),
@@ -852,3 +854,5 @@ async def startup_event():
             db.add(super_admin)
             db.commit()
             logger.info("Super admin created")
+    finally:
+        db.close()
