@@ -69,9 +69,14 @@ const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (email, password, subdomain = null) => {
     try {
-      const response = await api.post('/auth/login', { email, password });
+      const payload = { email, password };
+      if (subdomain && subdomain.trim()) {
+        payload.subdomain = subdomain.trim();
+      }
+      
+      const response = await api.post('/auth/login', payload);
       const { access_token, user: userData } = response.data;
       
       localStorage.setItem('token', access_token);
