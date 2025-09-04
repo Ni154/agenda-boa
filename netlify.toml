@@ -5,9 +5,15 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  REACT_APP_BACKEND_URL = "agenda-boa-production.up.railway.app"
 
-# SPA redirects (se preferir deixar aqui em vez de public/_redirects)
+# Proxy só as chamadas de API para o backend do Railway:
+[[redirects]]
+  from = "/api/*"
+  to = "https://agenda-boa-production.up.railway.app/api/:splat"
+  status = 200
+  force = true
+
+# SPA fallback (CRA)
 [[redirects]]
   from = "/*"
   to = "/index.html"
