@@ -64,6 +64,7 @@ class Tenant(Base):
     servicos = relationship("Servico", back_populates="tenant", cascade="all, delete-orphan")
     vendas = relationship("Venda", back_populates="tenant", cascade="all, delete-orphan")
     agendamentos = relationship("Agendamento", back_populates="tenant", cascade="all, delete-orphan")
+    vencimentos = relationship("Vencimento", cascade="all, delete-orphan")
 
 class User(Base):
     __tablename__ = "users"
