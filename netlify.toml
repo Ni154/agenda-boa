@@ -1,0 +1,14 @@
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "build"
+
+[build.environment]
+  NODE_VERSION = "20"
+  REACT_APP_BACKEND_URL = "agenda-boa-production.up.railway.app"
+
+# SPA redirects (se preferir deixar aqui em vez de public/_redirects)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
