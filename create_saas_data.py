@@ -154,7 +154,7 @@ def create_saas_data():
         # Clientes for Tenant 1
         clientes_t1 = [
             Cliente(
-                id=uuid.uuid4(),
+                id=str(uuid.uuid4()),
                 nome="Ana Costa",
                 email="ana@email.com",
                 telefone="(11) 99999-1111",
@@ -163,7 +163,7 @@ def create_saas_data():
                 tenant_id=tenant1_id
             ),
             Cliente(
-                id=uuid.uuid4(),
+                id=str(uuid.uuid4()),
                 nome="Beatriz Lima",
                 email="beatriz@email.com",
                 telefone="(11) 99999-2222",
@@ -172,7 +172,7 @@ def create_saas_data():
                 tenant_id=tenant1_id
             ),
             Cliente(
-                id=uuid.uuid4(),
+                id=str(uuid.uuid4()),
                 nome="Carlos Mendes",
                 email="carlos@email.com",
                 telefone="(11) 99999-3333",
