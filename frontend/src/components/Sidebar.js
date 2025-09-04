@@ -161,6 +161,34 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
               )}
             </div>
 
+            {/* Admin Menu Items */}
+            {adminItems.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <div className="px-4 py-2">
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                    Administração
+                  </p>
+                </div>
+                {adminItems.map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    onClick={() => setIsOpen(false)}
+                    className={`
+                      flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200
+                      ${isActive(item.path) 
+                        ? 'bg-emerald-50 text-emerald-700 shadow-sm' 
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      }
+                    `}
+                  >
+                    <item.icon className="w-5 h-5" />
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            )}
+
             {/* Additional Menu Items */}
             <Link
               to="/backup"
