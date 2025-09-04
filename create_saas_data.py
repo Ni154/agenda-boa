@@ -57,7 +57,7 @@ def create_saas_data():
             print("✅ Super Admin criado: admin@sistema.com / admin123")
         
         # 2. Create Demo Tenant 1 - Salão de Beleza
-        tenant1_id = uuid.uuid4()
+        tenant1_id = str(uuid.uuid4())
         tenant1 = Tenant(
             id=tenant1_id,
             subdomain="salao-bella",
@@ -77,7 +77,7 @@ def create_saas_data():
         
         # Admin user for tenant 1
         admin1 = User(
-            id=uuid.uuid4(),
+            id=str(uuid.uuid4()),
             email="admin@salaobella.com",
             name="Maria Silva",
             hashed_password=pwd_context.hash("bella123"),
@@ -89,7 +89,7 @@ def create_saas_data():
         print("✅ Tenant 1 - Salão Bella: admin@salaobella.com / bella123")
         
         # 3. Create Demo Tenant 2 - Clínica Médica
-        tenant2_id = uuid.uuid4()
+        tenant2_id = str(uuid.uuid4())
         tenant2 = Tenant(
             id=tenant2_id,
             subdomain="clinica-vida",
@@ -109,7 +109,7 @@ def create_saas_data():
         
         # Admin user for tenant 2
         admin2 = User(
-            id=uuid.uuid4(),
+            id=str(uuid.uuid4()),
             email="admin@clinicavida.com",
             name="Dr. João Santos",
             hashed_password=pwd_context.hash("vida123"),
@@ -121,7 +121,7 @@ def create_saas_data():
         print("✅ Tenant 2 - Clínica Vida: admin@clinicavida.com / vida123")
         
         # 4. Create Demo Tenant 3 - Suspended (for testing)
-        tenant3_id = uuid.uuid4()
+        tenant3_id = str(uuid.uuid4())
         tenant3 = Tenant(
             id=tenant3_id,
             subdomain="loja-suspensa",
@@ -135,7 +135,7 @@ def create_saas_data():
         db.add(tenant3)
         
         admin3 = User(
-            id=uuid.uuid4(),
+            id=str(uuid.uuid4()),
             email="admin@suspensa.com",
             name="Admin Suspenso",
             hashed_password=pwd_context.hash("suspensa123"),
