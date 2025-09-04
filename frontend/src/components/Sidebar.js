@@ -79,8 +79,8 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
               <Building2 className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h2 className="font-bold text-slate-800">ERP Sistema</h2>
-              <p className="text-sm text-slate-500">Gestão Empresarial</p>
+              <h2 className="font-bold text-slate-800">Studio ERP</h2>
+              <p className="text-sm text-slate-500">Sistema Empresarial</p>
             </div>
           </div>
         </div>
