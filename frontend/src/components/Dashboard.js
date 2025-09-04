@@ -167,7 +167,7 @@ const Dashboard = () => {
           <CardContent>
             <div className="h-64 flex items-center justify-center bg-slate-50 rounded-lg">
               <div className="text-center text-slate-500">
-                <BarChart3 className="w-12 h-12 mx-auto mb-3 text-slate-400" />
+                <TrendingUp className="w-12 h-12 mx-auto mb-3 text-slate-400" />
                 <p>Gráfico de vendas será implementado</p>
                 <p className="text-sm">com biblioteca de charts</p>
               </div>
