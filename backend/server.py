@@ -30,9 +30,18 @@ create_tables()
 SECRET_KEY = os.environ.get('JWT_SECRET', 'your-secret-key-here')
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours
+
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY')
-RESEND_FROM = os.environ.get('RESEND_FROM', 'noreply@sistema.com')
+# >>> ADAPTADO: default já no formato que você usa (pode ser sobrescrito pela env)
+RESEND_FROM = os.environ.get('RESEND_FROM', 'ERP Sistema <nsautomacaoolinda@gmail.com>')
+
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+
+# CORS (ADAPTADO p/ Railway/Netlify)
+# Aceita CORS_ALLOWED_ORIGINS ou CORS_ORIGINS; se vier "*", desliga credentials (requisito do CORS)
+_CORS_ALLOWED = os.environ.get('CORS_ALLOWED_ORIGINS') or os.environ.get('CORS_ORIGINS') or '*'
+_ALLOWED_ORIGINS = [o.strip() for o in _CORS_ALLOWED.split(',') if o.strip()]
+_ALLOW_CREDENTIALS = ('*' not in _ALLOWED_ORIGINS)  # se '*' presente, não pode credenciais
 
 # Setup Resend
 if RESEND_API_KEY:
@@ -43,17 +52,17 @@ security = HTTPBearer()
 
 app = FastAPI(title="ERP SaaS - Sistema de Gestão Empresarial", version="2.0.0")
 
-
 @app.get('/health')
 def health():
     return {'status': 'ok'}
+
 api_router = APIRouter(prefix="/api")
 
-# CORS
+# CORS middleware (usando as variáveis calculadas acima)
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=_ALLOWED_ORIGINS if _ALLOWED_ORIGINS else ['*'],
+    allow_credentials=_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -271,7 +280,7 @@ def send_email(to_email: str, subject: str, html_content: str):
             "subject": subject,
             "html": html_content,
         }
-        email = resend.Emails.send(params)
+        resend.Emails.send(params)
         return True
     except Exception as e:
         print(f"Error sending email: {e}")
