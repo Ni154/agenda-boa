@@ -21,7 +21,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 # Import database AFTER loading env vars
 from sqlalchemy.orm import Session
-from database import get_db, create_tables, Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, SessionLocal
+from .database import get_db, create_tables, Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, SessionLocal
 
 # Create tables
 create_tables()
@@ -31,6 +31,7 @@ SECRET_KEY = os.environ.get('JWT_SECRET', 'your-secret-key-here')
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY')
+RESEND_FROM = os.environ.get('RESEND_FROM', 'noreply@sistema.com')
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
 
 # Setup Resend
@@ -41,6 +42,11 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 app = FastAPI(title="ERP SaaS - Sistema de Gestão Empresarial", version="2.0.0")
+
+
+@app.get('/health')
+def health():
+    return {'status': 'ok'}
 api_router = APIRouter(prefix="/api")
 
 # CORS
@@ -260,7 +266,7 @@ def send_email(to_email: str, subject: str, html_content: str):
     
     try:
         params = {
-            "from": "ERP Sistema <noreply@sistema.com>",
+            "from": RESEND_FROM,
             "to": [to_email],
             "subject": subject,
             "html": html_content,
