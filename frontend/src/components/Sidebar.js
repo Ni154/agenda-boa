@@ -31,7 +31,6 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
     { icon: Package, label: 'Estoque', path: '/estoque' },
     { icon: DollarSign, label: 'Financeiro', path: '/financeiro' },
     { icon: BarChart3, label: 'Relatórios', path: '/relatorios' },
-    { icon: Users, label: 'Usuários', path: '/usuarios' },
   ];
 
   const cadastroItems = [
@@ -39,6 +38,15 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
     { icon: Building2, label: 'Fornecedores', path: '/fornecedores' },
     { icon: Wrench, label: 'Serviços', path: '/servicos' },
     { icon: Package, label: 'Produtos', path: '/produtos' },
+  ];
+
+  const adminItems = [
+    ...(user?.role === 'super_admin' ? [
+      { icon: Building2, label: 'Empresas', path: '/empresas' }
+    ] : []),
+    ...(user?.role === 'super_admin' || user?.role === 'admin_empresa' ? [
+      { icon: Users, label: 'Usuários', path: '/usuarios' }
+    ] : [])
   ];
 
   const isActive = (path) => location.pathname === path;
