@@ -9,29 +9,27 @@ import uuid
 import os
 from typing import Generator
 
-# -------------------------------------------------------------------
-# Config DB
-# -------------------------------------------------------------------
-DATABASE_URL = os.environ.get('DATABASE_URL')
+# ---------------------------------------------------------------------
+# Conexão
+# ---------------------------------------------------------------------
+DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is required")
 
-# Detecta SQLite x Postgres
 is_sqlite = DATABASE_URL.startswith("sqlite")
 
 if is_sqlite:
     engine = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
-        connect_args={"check_same_thread": False}
+        connect_args={"check_same_thread": False},
     )
     IdType = String(36)  # SQLite não tem UUID nativo
 elif DATABASE_URL.startswith("postgresql://"):
     from sqlalchemy.dialects.postgresql import UUID
-    # força driver psycopg2 (Railway costuma usar)
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-    IdType = UUID(as_uuid=True)
+    IdType = UUID(as_uuid=True)  # UUID nativo no Postgres
 else:
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
     IdType = String(36)
@@ -40,18 +38,13 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
-def gen_id():
-    # usando string funciona para ambos (Postgres aceita cast implícito)
-    return str(uuid.uuid4())
-
-
-# -------------------------------------------------------------------
+# ---------------------------------------------------------------------
 # MODELOS
-# -------------------------------------------------------------------
+# ---------------------------------------------------------------------
 class Tenant(Base):
     __tablename__ = "tenants"
 
-    id = Column(IdType, primary_key=True, default=gen_id)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     subdomain = Column(String(50), unique=True, nullable=False, index=True)
     company_name = Column(String(200), nullable=False)
     cnpj = Column(String(20), unique=True)
@@ -62,19 +55,22 @@ class Tenant(Base):
     email = Column(String(100))
 
     # SaaS
-    plan = Column(String(20), default="basic")  # basic, premium, enterprise
+    plan = Column(String(20), default="basic")
     is_active = Column(Boolean, default=True)
     trial_ends_at = Column(DateTime(timezone=True))
-    subscription_status = Column(String(20), default="trial")  # trial, active, suspended, cancelled
+    subscription_status = Column(String(20), default="trial")
     stripe_customer_id = Column(String(100))
 
     # Certificado
     usar_certificado = Column(Boolean, default=False)
-    certificado_config = Column(Text)  # JSON string
+    certificado_config = Column(Text)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
+    )
 
     # Relacionamentos
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
@@ -84,41 +80,42 @@ class Tenant(Base):
     vendas = relationship("Venda", back_populates="tenant", cascade="all, delete-orphan")
     agendamentos = relationship("Agendamento", back_populates="tenant", cascade="all, delete-orphan")
 
-    # Pareado com Vencimento.tenant
+    # >>> RELAÇÃO QUE FALTAVA/ESTAVA ERRADA <<<
     vencimentos = relationship("Vencimento", back_populates="tenant", cascade="all, delete-orphan")
 
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(IdType, primary_key=True, default=gen_id)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     email = Column(String(100), nullable=False, index=True)
     name = Column(String(100), nullable=False)
     hashed_password = Column(String(200), nullable=False)
     role = Column(String(20), nullable=False, default="operador")  # super_admin, admin_empresa, operador
     is_active = Column(Boolean, default=True)
 
-    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=True)  # Null para super_admin
+    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=True)  # super_admin = None
 
     reset_token = Column(String(200))
     reset_token_expires = Column(DateTime(timezone=True))
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
+    )
 
     tenant = relationship("Tenant", back_populates="users")
     vendas = relationship("Venda", back_populates="vendedor")
 
-    __table_args__ = (
-        Index('idx_user_email_tenant', 'email', 'tenant_id', unique=True),
-    )
+    __table_args__ = (Index("idx_user_email_tenant", "email", "tenant_id", unique=True),)
 
 
 class Cliente(Base):
     __tablename__ = "clientes"
 
-    id = Column(IdType, primary_key=True, default=gen_id)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     nome = Column(String(200), nullable=False)
     email = Column(String(100))
     telefone = Column(String(20))
@@ -129,9 +126,12 @@ class Cliente(Base):
 
     tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
+    )
 
     tenant = relationship("Tenant", back_populates="clientes")
     vendas = relationship("Venda", back_populates="cliente")
@@ -141,7 +141,7 @@ class Cliente(Base):
 class Produto(Base):
     __tablename__ = "produtos"
 
-    id = Column(IdType, primary_key=True, default=gen_id)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     codigo = Column(String(50))
     nome = Column(String(200), nullable=False)
     descricao = Column(Text)
@@ -154,9 +154,12 @@ class Produto(Base):
 
     tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
+    )
 
     tenant = relationship("Tenant", back_populates="produtos")
 
@@ -164,7 +167,7 @@ class Produto(Base):
 class Servico(Base):
     __tablename__ = "servicos"
 
-    id = Column(IdType, primary_key=True, default=gen_id)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     nome = Column(String(200), nullable=False)
     descricao = Column(Text)
     duracao_minutos = Column(Integer, default=60)
@@ -173,9 +176,12 @@ class Servico(Base):
 
     tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
+    )
 
     tenant = relationship("Tenant", back_populates="servicos")
 
@@ -183,7 +189,7 @@ class Servico(Base):
 class Venda(Base):
     __tablename__ = "vendas"
 
-    id = Column(IdType, primary_key=True, default=gen_id)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     cliente_id = Column(IdType, ForeignKey("clientes.id"))
     cliente_nome = Column(String(200))
     itens = Column(Text, nullable=False)  # JSON string
@@ -200,9 +206,12 @@ class Venda(Base):
     tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
     vendedor_id = Column(IdType, ForeignKey("users.id"), nullable=False)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
+    )
 
     tenant = relationship("Tenant", back_populates="vendas")
     cliente = relationship("Cliente", back_populates="vendas")
@@ -212,7 +221,7 @@ class Venda(Base):
 class Agendamento(Base):
     __tablename__ = "agendamentos"
 
-    id = Column(IdType, primary_key=True, default=gen_id)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     cliente_id = Column(IdType, ForeignKey("clientes.id"), nullable=False)
     servico_id = Column(IdType, ForeignKey("servicos.id"), nullable=False)
     data_hora = Column(DateTime(timezone=True), nullable=False)
@@ -221,42 +230,44 @@ class Agendamento(Base):
 
     tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
+    )
 
     tenant = relationship("Tenant", back_populates="agendamentos")
     cliente = relationship("Cliente", back_populates="agendamentos")
     servico = relationship("Servico")
 
 
-# 👇 Modelo Vencimento com pareamento e overlaps para silenciar o warning
+# >>> NOVO MODELO: Vencimento <<<
 class Vencimento(Base):
     __tablename__ = "vencimentos"
 
-    id = Column(IdType, primary_key=True, default=gen_id)
-    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False, index=True)
+    id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
 
-    descricao = Column(String(255))
+    descricao = Column(String(200))
     valor = Column(Float, default=0.0)
-    data_vencimento = Column(DateTime(timezone=True))
+    data = Column(DateTime(timezone=True), nullable=False)
     pago = Column(Boolean, default=False)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
-
-    # O log pede para colocar overlaps="vencimentos" AQUI
-    tenant = relationship(
-        "Tenant",
-        back_populates="vencimentos",
-        overlaps="vencimentos"
+    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
     )
 
+    # RELAÇÃO espelhada corretamente
+    tenant = relationship("Tenant", back_populates="vencimentos")
 
-# -------------------------------------------------------------------
+
+# ---------------------------------------------------------------------
 # Dependência DB
-# -------------------------------------------------------------------
+# ---------------------------------------------------------------------
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
@@ -265,8 +276,8 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-# -------------------------------------------------------------------
-# Create tables
-# -------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Criar tabelas
+# ---------------------------------------------------------------------
 def create_tables():
     Base.metadata.create_all(bind=engine)
