@@ -1,14 +1,16 @@
+# netlify.toml (place this file inside your `frontend/` folder)
 [build]
-  base = "frontend"
   command = "yarn install --frozen-lockfile || yarn install && yarn build"
-  publish = "frontend/build"
+  publish = "build"
 
+# Proxy API calls to your Railway backend (put your real URL below)
 [[redirects]]
   from = "/api/*"
   to = "https://agenda-boa-production.up.railway.app/api/:splat"
   status = 200
   force = true
 
+# SPA fallback
 [[redirects]]
   from = "/*"
   to = "/index.html"
