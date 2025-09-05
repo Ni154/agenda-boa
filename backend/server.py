@@ -41,18 +41,12 @@ if load_dotenv:
 # --------- Imports do banco (modo tolerante a pacote/módulo) ---------
 try:
     # quando server.py está dentro de um pacote (ex.: backend/server.py)
-    from .database import (
-        get_db,
-        create_tables,
-        Tenant,
-        User,
-        Cliente,
-        Produto,
-        Servico,
-        Venda,
-        Agendamento,
-        SessionLocal,
-    )
+    # server.py (trecho de imports)
+from .database import (
+    get_db, create_tables, SessionLocal,
+    Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, Vencimento
+)
+
 except Exception:
     # quando server.py está na raiz ao lado de database.py
     from database import (
