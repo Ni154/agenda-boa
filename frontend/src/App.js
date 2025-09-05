@@ -1,3 +1,5 @@
+/* App.js */
+
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
@@ -15,21 +17,24 @@ import Sidebar from './components/Sidebar';
 import { Toaster } from './components/ui/sonner';
 
 /**
- * API base resolution strategy:
- * 1) REACT_APP_API_BASE_URL -> expected full base including /api (ex: https://app.up.railway.app/api)
- * 2) REACT_APP_BACKEND_URL  -> base host; we will append /api
- * 3) fallback '/api'         -> relies on Netlify proxy / redirects
+ * Estratégia para descobrir a base da API:
+ * 1) REACT_APP_API_BASE_URL -> base completa (já com /api), ex.: https://seu-backend.up.railway.app/api
+ * 2) REACT_APP_BACKEND_URL  -> host/base do backend; acrescenta /api
+ * 3) fallback '/api'         -> usa proxy/redirects do Netlify
  */
 const API_BASE = (() => {
-  const full = process.env.REACT_APP_API_BASE_URL && process.env.REACT_APP_API_BASE_URL.trim();
-  const host = process.env.REACT_APP_BACKEND_URL && process.env.REACT_APP_BACKEND_URL.trim();
+  const full = (process.env.REACT_APP_API_BASE_URL || '').trim();
+  const host = (process.env.REACT_APP_BACKEND_URL || '').trim();
 
-  if (full && full.length > 0) {
-    return full.replace(/\\/+$/, '');
+  if (full.length > 0) {
+    // remove barras no final
+    return full.replace(/\/+$/, '');
   }
-  if (host && host.length > 0) {
-    return host.replace(/\\/+$/, '') + '/api';
+  if (host.length > 0) {
+    // remove barras no final e acrescenta /api
+    return host.replace(/\/+$/, '') + '/api';
   }
+  // usa redirects do Netlify
   return '/api';
 })();
 
@@ -38,7 +43,7 @@ export const api = axios.create({
   baseURL: API_BASE,
 });
 
-// Request interceptor to add auth token
+// Interceptor: adiciona token
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -47,7 +52,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor to handle auth errors
+// Interceptor: trata 401
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -124,13 +129,13 @@ const AuthProvider = ({ children }) => {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// Protected Route
+// Rota protegida
 const ProtectedRoute = ({ children }) => {
   const { user } = useAuth();
   return user ? children : <Navigate to="/login" replace />;
 };
 
-// Main Layout
+// Layout principal
 const MainLayout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
