@@ -65,6 +65,7 @@ except Exception:
         Servico,
         Venda,
         Agendamento,
+        Vencimento,
         SessionLocal,
     )
 
