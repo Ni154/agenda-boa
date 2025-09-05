@@ -14,12 +14,28 @@ import Agendamentos from './components/Agendamentos';
 import Sidebar from './components/Sidebar';
 import { Toaster } from './components/ui/sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+/**
+ * API base resolution strategy:
+ * 1) REACT_APP_API_BASE_URL -> expected full base including /api (ex: https://app.up.railway.app/api)
+ * 2) REACT_APP_BACKEND_URL  -> base host; we will append /api
+ * 3) fallback '/api'         -> relies on Netlify proxy / redirects
+ */
+const API_BASE = (() => {
+  const full = process.env.REACT_APP_API_BASE_URL && process.env.REACT_APP_API_BASE_URL.trim();
+  const host = process.env.REACT_APP_BACKEND_URL && process.env.REACT_APP_BACKEND_URL.trim();
 
-// Create axios instance with interceptors
-const api = axios.create({
-  baseURL: API,
+  if (full && full.length > 0) {
+    return full.replace(/\\/+$/, '');
+  }
+  if (host && host.length > 0) {
+    return host.replace(/\\/+$/, '') + '/api';
+  }
+  return '/api';
+})();
+
+// Axios instance
+export const api = axios.create({
+  baseURL: API_BASE,
 });
 
 // Request interceptor to add auth token
@@ -35,7 +51,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error?.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
@@ -62,7 +78,6 @@ const AuthProvider = ({ children }) => {
   useEffect(() => {
     const token = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
-    
     if (token && userData) {
       setUser(JSON.parse(userData));
     }
@@ -75,19 +90,17 @@ const AuthProvider = ({ children }) => {
       if (subdomain && subdomain.trim()) {
         payload.subdomain = subdomain.trim();
       }
-      
-      const response = await api.post('/auth/login', payload);
-      const { access_token, user: userData } = response.data;
-      
+      const { data } = await api.post('/auth/login', payload);
+      const { access_token, user: userData } = data;
+
       localStorage.setItem('token', access_token);
       localStorage.setItem('user', JSON.stringify(userData));
       setUser(userData);
-      
       return { success: true };
     } catch (error) {
-      return { 
-        success: false, 
-        message: error.response?.data?.detail || 'Erro ao fazer login' 
+      return {
+        success: false,
+        message: error?.response?.data?.detail || 'Erro ao fazer login',
       };
     }
   };
@@ -98,12 +111,7 @@ const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
-  const value = {
-    user,
-    login,
-    logout,
-    api
-  };
+  const value = { user, login, logout };
 
   if (loading) {
     return (
@@ -113,23 +121,18 @@ const AuthProvider = ({ children }) => {
     );
   }
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// Protected Route Component
+// Protected Route
 const ProtectedRoute = ({ children }) => {
   const { user } = useAuth();
   return user ? children : <Navigate to="/login" replace />;
 };
 
-// Main Layout Component
+// Main Layout
 const MainLayout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
   return (
     <div className="flex h-screen bg-slate-50">
       <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
@@ -146,9 +149,7 @@ const MainLayout = ({ children }) => {
             </button>
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto p-4 lg:p-8">{children}</main>
       </div>
     </div>
   );
@@ -161,48 +162,66 @@ function App() {
         <div className="App">
           <Routes>
             <Route path="/login" element={<Login />} />
-            <Route path="/" element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <Dashboard />
-                </MainLayout>
-              </ProtectedRoute>
-            } />
-            <Route path="/pos" element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <POS />
-                </MainLayout>
-              </ProtectedRoute>
-            } />
-            <Route path="/clientes" element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <Clientes />
-                </MainLayout>
-              </ProtectedRoute>
-            } />
-            <Route path="/produtos" element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <Produtos />
-                </MainLayout>
-              </ProtectedRoute>
-            } />
-            <Route path="/servicos" element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <Servicos />
-                </MainLayout>
-              </ProtectedRoute>
-            } />
-            <Route path="/agendamentos" element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <Agendamentos />
-                </MainLayout>
-              </ProtectedRoute>
-            } />
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <Dashboard />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/pos"
+              element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <POS />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/clientes"
+              element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <Clientes />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/produtos"
+              element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <Produtos />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/servicos"
+              element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <Servicos />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/agendamentos"
+              element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <Agendamentos />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
           </Routes>
           <Toaster />
         </div>
