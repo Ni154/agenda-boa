@@ -1,3 +1,4 @@
+# database.py
 from sqlalchemy import create_engine, Column, String, DateTime, Boolean, Float, Integer, Text, ForeignKey, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
@@ -22,14 +23,14 @@ if is_sqlite:
         pool_pre_ping=True,
         connect_args={'check_same_thread': False}
     )
-    # SQLite does not have native UUID; store as 36-char strings
+    # SQLite não tem UUID nativo; usar string de 36 chars
     IdType = String(36)
 elif DATABASE_URL.startswith('postgresql://'):
     from sqlalchemy.dialects.postgresql import UUID
-    # Ensure psycopg2 driver
+    # Garantir driver psycopg2
     DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+psycopg2://', 1)
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-    # Postgres can use real UUID columns
+    # Postgres pode usar coluna UUID de verdade
     IdType = UUID(as_uuid=True)
 else:
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
@@ -61,21 +62,21 @@ class Tenant(Base):
     subscription_status = Column(String(20), default='trial')  # trial, active, suspended, cancelled
     stripe_customer_id = Column(String(100))
 
-    # Certificate
+    # Certificado
     usar_certificado = Column(Boolean, default=False)
     certificado_config = Column(Text)  # JSON string
 
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
-    # Relationships
+    # Relacionamentos
     users = relationship('User', back_populates='tenant', cascade='all, delete-orphan')
     clientes = relationship('Cliente', back_populates='tenant', cascade='all, delete-orphan')
     produtos = relationship('Produto', back_populates='tenant', cascade='all, delete-orphan')
     servicos = relationship('Servico', back_populates='tenant', cascade='all, delete-orphan')
     vendas = relationship('Venda', back_populates='tenant', cascade='all, delete-orphan')
     agendamentos = relationship('Agendamento', back_populates='tenant', cascade='all, delete-orphan')
-    # Fixed relationship for vencimentos (paired with Vencimento.tenant via back_populates)
+    # Relacionamento corrigido para vencimentos
     vencimentos = relationship('Vencimento', back_populates='tenant', cascade='all, delete-orphan')
 
 
@@ -90,20 +91,20 @@ class User(Base):
     is_active = Column(Boolean, default=True)
 
     # Multi-tenant
-    tenant_id = Column(IdType, ForeignKey('tenants.id'), nullable=True)  # Null for super_admin
+    tenant_id = Column(IdType, ForeignKey('tenants.id'), nullable=True)  # Null para super_admin
 
-    # Password reset
+    # Reset de senha
     reset_token = Column(String(200))
     reset_token_expires = Column(DateTime(timezone=True))
 
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
-    # Relationships
+    # Relacionamentos
     tenant = relationship('Tenant', back_populates='users')
     vendas = relationship('Venda', back_populates='vendedor')
 
-    # Indexes
+    # Índices
     __table_args__ = (
         Index('idx_user_email_tenant', 'email', 'tenant_id', unique=True),
     )
@@ -127,7 +128,7 @@ class Cliente(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
-    # Relationships
+    # Relacionamentos
     tenant = relationship('Tenant', back_populates='clientes')
     vendas = relationship('Venda', back_populates='cliente')
     agendamentos = relationship('Agendamento', back_populates='cliente')
@@ -153,7 +154,7 @@ class Produto(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
-    # Relationships
+    # Relacionamentos
     tenant = relationship('Tenant', back_populates='produtos')
 
 
@@ -173,7 +174,7 @@ class Servico(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
-    # Relationships
+    # Relacionamentos
     tenant = relationship('Tenant', back_populates='servicos')
 
 
@@ -201,7 +202,7 @@ class Venda(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
-    # Relationships
+    # Relacionamentos
     tenant = relationship('Tenant', back_populates='vendas')
     cliente = relationship('Cliente', back_populates='vendas')
     vendedor = relationship('User', back_populates='vendas')
@@ -223,7 +224,7 @@ class Agendamento(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
-    # Relationships
+    # Relacionamentos
     tenant = relationship('Tenant', back_populates='agendamentos')
     cliente = relationship('Cliente', back_populates='agendamentos')
     servico = relationship('Servico')
@@ -244,7 +245,7 @@ class Vencimento(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
-    # RELATIONSHIP CORRETA (pareada com Tenant.vencimentos)
+    # RELACIONAMENTO CORRETO (pareado com Tenant.vencimentos)
     tenant = relationship('Tenant', back_populates='vencimentos')
 
 
