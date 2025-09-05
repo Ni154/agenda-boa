@@ -84,7 +84,7 @@ class Tenant(Base):
     vendas = relationship("Venda", back_populates="tenant", cascade="all, delete-orphan")
     agendamentos = relationship("Agendamento", back_populates="tenant", cascade="all, delete-orphan")
 
-    # 👇 ADICIONADO: pareado com Vencimento.tenant
+    # Pareado com Vencimento.tenant
     vencimentos = relationship("Vencimento", back_populates="tenant", cascade="all, delete-orphan")
 
 
@@ -230,7 +230,7 @@ class Agendamento(Base):
     servico = relationship("Servico")
 
 
-# 👇 NOVO: Modelo Vencimento com relacionamento pareado
+# 👇 Modelo Vencimento com pareamento e overlaps para silenciar o warning
 class Vencimento(Base):
     __tablename__ = "vencimentos"
 
@@ -246,8 +246,12 @@ class Vencimento(Base):
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
 
-    # PAREAMENTO correto com Tenant.vencimentos
-    tenant = relationship("Tenant", back_populates="vencimentos")
+    # O log pede para colocar overlaps="vencimentos" AQUI
+    tenant = relationship(
+        "Tenant",
+        back_populates="vencimentos",
+        overlaps="vencimentos"
+    )
 
 
 # -------------------------------------------------------------------
