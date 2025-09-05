@@ -1,6 +1,6 @@
-# server.py — versão enxuta (sem modelos), pronta para Railway
 import os
 import logging
+import warnings
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Any
 
@@ -8,22 +8,26 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRouter
 from pydantic import BaseModel, EmailStr
-from jose import JWTError, jwt
+from jose import jwt, JWTError
 from passlib.context import CryptContext
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.exc import SAWarning
 
-# Importa APENAS do database.py (os modelos vivem lá)
+# ====== silenciar qualquer SAWarning (inclui o do Vencimento) ======
+warnings.filterwarnings("ignore", category=SAWarning)
+
+# ====== importa SOMENTE do database.py (modelos vivem lá) =========
 try:
     from .database import (
         SessionLocal, get_db, create_tables,
-        Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, Vencimento
+        Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, Vencimento,
     )
 except Exception:
     from database import (
         SessionLocal, get_db, create_tables,
-        Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, Vencimento
+        Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, Vencimento,
     )
 
 # ====================== Config ======================
@@ -35,16 +39,16 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://agenda-boa.netlify.app")
 
-DEFAULT_CORS = [
+CORS_ORIGINS = {
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://agenda-boa.netlify.app",
-]
-if FRONTEND_URL and FRONTEND_URL not in DEFAULT_CORS:
-    DEFAULT_CORS.append(FRONTEND_URL)
+    FRONTEND_URL,
+}
+CORS_ORIGINS = [o for o in CORS_ORIGINS if o]
 
 # ====================== Segurança ======================
-# Usa pbkdf2_sha256 para evitar problemas do backend bcrypt no Railway
+# usa pbkdf2_sha256 para evitar treta com bcrypt no Railway
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 def hash_password(pwd: str) -> str:
@@ -53,7 +57,7 @@ def hash_password(pwd: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
-def create_access_token(data: dict, minutes: int = ACCESS_TOKEN_EXPIRE_MINUTES) -> str:
+def create_access_token(data: dict, minutes: int) -> str:
     payload = data.copy()
     payload["exp"] = datetime.now(timezone.utc) + timedelta(minutes=minutes)
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
@@ -62,11 +66,13 @@ def decode_token(token: str) -> dict:
     return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
 
 # ====================== App ======================
+BUILD_ID = os.getenv("BUILD_ID", datetime.now().strftime("%Y%m%d-%H%M%S"))
+
 app = FastAPI(title="Agenda Boa API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=DEFAULT_CORS,
+    allow_origins=CORS_ORIGINS,
     allow_origin_regex=r"https://.*\.netlify\.app$",
     allow_credentials=True,
     allow_methods=["*"],
@@ -201,15 +207,20 @@ def _startup():
     finally:
         db.close()
 
-# ====================== Health ======================
+# ====================== Health & debug ======================
 @app.get("/")
 def root():
-    return {"status": "ok", "service": "agenda-boa", "time": datetime.now(timezone.utc).isoformat()}
+    return {"status": "ok", "service": "agenda-boa", "build": BUILD_ID}
 
 @app.get("/health")
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "build": BUILD_ID}
+
+# >>> rota de diagnóstico para confirmar QUAL server.py está rodando
+@app.get("/__whoami")
+def whoami():
+    return {"file": __file__, "build": BUILD_ID, "time": datetime.now(timezone.utc).isoformat()}
 
 # ====================== Auth ======================
 auth = APIRouter(prefix="/auth", tags=["auth"])
@@ -231,7 +242,7 @@ def do_login(payload: LoginRequest, db: Session = Depends(get_db)) -> Any:
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(401, "Credenciais inválidas")
 
-    token = create_access_token({"sub": user.id})
+    token = create_access_token({"sub": user.id}, ACCESS_TOKEN_EXPIRE_MINUTES)
     return TokenResponse(
         access_token=token,
         user={
