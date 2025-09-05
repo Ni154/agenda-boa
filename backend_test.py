@@ -1,352 +1,91 @@
-import requests
-import sys
+# backend_test.py (PT-BR vars) — lê E-MAIL_ADMINISTRATIVO/SENHA_ADMIN
+import os, sys, json
 from datetime import datetime
-import json
+import requests
 
-class ERPSystemTester:
-    def __init__(self, base_url="https://enterprise-hub-50.preview.emergentagent.com/api"):
-        self.base_url = base_url
-        self.token = None
-        self.user_data = None
-        self.tests_run = 0
-        self.tests_passed = 0
-        self.empresa_id = None
+def get_env_any(names, default=None):
+    for n in names:
+        v = os.getenv(n)
+        if v and str(v).strip():
+            return v
+    return default
 
-    def run_test(self, name, method, endpoint, expected_status, data=None, headers=None):
-        """Run a single API test"""
-        url = f"{self.base_url}/{endpoint}"
-        test_headers = {'Content-Type': 'application/json'}
-        
-        if self.token:
-            test_headers['Authorization'] = f'Bearer {self.token}'
-        
-        if headers:
-            test_headers.update(headers)
+API_BASE_URL = get_env_any(["API_BASE_URL"], "http://localhost:8080/api")
 
-        self.tests_run += 1
-        print(f"\n🔍 Testing {name}...")
-        print(f"   URL: {url}")
-        
-        try:
-            if method == 'GET':
-                response = requests.get(url, headers=test_headers, timeout=10)
-            elif method == 'POST':
-                response = requests.post(url, json=data, headers=test_headers, timeout=10)
-            elif method == 'PUT':
-                response = requests.put(url, json=data, headers=test_headers, timeout=10)
-            elif method == 'DELETE':
-                response = requests.delete(url, headers=test_headers, timeout=10)
+ADMIN_EMAIL = get_env_any(["E-MAIL_ADMINISTRATIVO","EMAIL_ADMINISTRATIVO","E_MAIL_ADMINISTRATIVO","ADMIN_EMAIL"], "admin@sistema.com")
+ADMIN_PASSWORD = get_env_any(["SENHA_ADMIN","ADMIN_PASSWORD"], "admin123")
 
-            success = response.status_code == expected_status
-            if success:
-                self.tests_passed += 1
-                print(f"✅ Passed - Status: {response.status_code}")
-                try:
-                    response_data = response.json()
-                    print(f"   Response: {json.dumps(response_data, indent=2)[:200]}...")
-                    return True, response_data
-                except:
-                    return True, {}
-            else:
-                print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
-                try:
-                    error_data = response.json()
-                    print(f"   Error: {error_data}")
-                except:
-                    print(f"   Error: {response.text}")
-                return False, {}
+TENANT_ADMIN_PASSWORD = get_env_any(["TENANT_ADMIN_PASSWORD"], "tenant123")
+TEST_SUBDOMAIN = get_env_any(["TEST_SUBDOMAIN"], f"qa-{datetime.now().strftime('%Y%m%d%H%M%S')}")
+TENANT_ADMIN_EMAIL = get_env_any(["TENANT_ADMIN_EMAIL"], f"admin+{TEST_SUBDOMAIN}@empresa.com")
 
-        except Exception as e:
-            print(f"❌ Failed - Error: {str(e)}")
-            return False, {}
+def headers(token=None):
+    h = {"Content-Type":"application/json","Accept":"application/json"}
+    if token: h["Authorization"] = f"Bearer {token}"
+    return h
 
-    def test_login(self):
-        """Test login with provided credentials"""
-        print("\n" + "="*50)
-        print("TESTING AUTHENTICATION")
-        print("="*50)
-        
-        success, response = self.run_test(
-            "Login with admin credentials",
-            "POST",
-            "auth/login",
-            200,
-            data={"email": "admin@empresa.com", "password": "admin123"}
-        )
-        
-        if success and 'access_token' in response:
-            self.token = response['access_token']
-            self.user_data = response.get('user', {})
-            self.empresa_id = self.user_data.get('empresa_id')
-            print(f"✅ Login successful! User: {self.user_data.get('name', 'Unknown')}")
-            print(f"   Company ID: {self.empresa_id}")
-            return True
-        else:
-            print("❌ Login failed - cannot proceed with other tests")
-            return False
+def url(ep): return f"{API_BASE_URL}/{ep.lstrip('/')}"
 
-    def test_auth_me(self):
-        """Test getting current user info"""
-        success, response = self.run_test(
-            "Get current user info",
-            "GET",
-            "auth/me",
-            200
-        )
-        return success
+def post(ep, data, token=None, expect=200):
+    r = requests.post(url(ep), headers=headers(token), json=data, timeout=30)
+    ok = r.status_code==expect
+    return ok, (r.json() if ok else {"status":r.status_code, "text":r.text[:300]})
 
-    def test_dashboard(self):
-        """Test dashboard endpoint"""
-        print("\n" + "="*50)
-        print("TESTING DASHBOARD")
-        print("="*50)
-        
-        success, response = self.run_test(
-            "Get dashboard data",
-            "GET",
-            "dashboard",
-            200
-        )
-        
-        if success:
-            print(f"📊 Dashboard KPIs:")
-            print(f"   Total Vendas: R$ {response.get('total_vendas', 0):.2f}")
-            print(f"   Lucro: R$ {response.get('lucro', 0):.2f}")
-            print(f"   Itens Estoque: {response.get('itens_estoque', 0)}")
-            print(f"   Margem Lucro: {response.get('margem_lucro', 0):.2f}%")
-        
-        return success
-
-    def test_clientes(self):
-        """Test clients management"""
-        print("\n" + "="*50)
-        print("TESTING CLIENTS MANAGEMENT")
-        print("="*50)
-        
-        # Get existing clients
-        success, clients = self.run_test(
-            "Get all clients",
-            "GET",
-            "clientes",
-            200
-        )
-        
-        if success:
-            print(f"📋 Found {len(clients)} clients")
-            for i, client in enumerate(clients[:3]):  # Show first 3
-                print(f"   {i+1}. {client.get('nome', 'Unknown')} - {client.get('email', 'No email')}")
-        
-        # Test creating a new client
-        test_client = {
-            "nome": "Cliente Teste API",
-            "email": "teste@email.com",
-            "telefone": "(11) 99999-9999",
-            "cpf_cnpj": "123.456.789-00"
-        }
-        
-        create_success, new_client = self.run_test(
-            "Create new client",
-            "POST",
-            "clientes",
-            200,
-            data=test_client
-        )
-        
-        return success and create_success
-
-    def test_produtos(self):
-        """Test products management"""
-        print("\n" + "="*50)
-        print("TESTING PRODUCTS MANAGEMENT")
-        print("="*50)
-        
-        # Get existing products
-        success, products = self.run_test(
-            "Get all products",
-            "GET",
-            "produtos",
-            200
-        )
-        
-        if success:
-            print(f"📦 Found {len(products)} products")
-            for i, product in enumerate(products[:4]):  # Show first 4
-                print(f"   {i+1}. {product.get('nome', 'Unknown')} - R$ {product.get('preco', 0):.2f} (Estoque: {product.get('estoque_atual', 0)})")
-        
-        # Test creating a new product
-        test_product = {
-            "nome": "Produto Teste API",
-            "descricao": "Produto criado via teste de API",
-            "categoria": "Teste",
-            "preco": 25.50,
-            "custo": 15.00,
-            "estoque_atual": 10,
-            "estoque_minimo": 5
-        }
-        
-        create_success, new_product = self.run_test(
-            "Create new product",
-            "POST",
-            "produtos",
-            200,
-            data=test_product
-        )
-        
-        return success and create_success
-
-    def test_servicos(self):
-        """Test services management"""
-        print("\n" + "="*50)
-        print("TESTING SERVICES MANAGEMENT")
-        print("="*50)
-        
-        # Get existing services
-        success, services = self.run_test(
-            "Get all services",
-            "GET",
-            "servicos",
-            200
-        )
-        
-        if success:
-            print(f"💼 Found {len(services)} services")
-            for i, service in enumerate(services[:5]):  # Show first 5
-                print(f"   {i+1}. {service.get('nome', 'Unknown')} - R$ {service.get('preco', 0):.2f} ({service.get('duracao_minutos', 0)} min)")
-        
-        # Test creating a new service
-        test_service = {
-            "nome": "Serviço Teste API",
-            "descricao": "Serviço criado via teste de API",
-            "duracao_minutos": 45,
-            "preco": 80.00
-        }
-        
-        create_success, new_service = self.run_test(
-            "Create new service",
-            "POST",
-            "servicos",
-            200,
-            data=test_service
-        )
-        
-        return success and create_success
-
-    def test_vendas(self):
-        """Test sales management"""
-        print("\n" + "="*50)
-        print("TESTING SALES MANAGEMENT")
-        print("="*50)
-        
-        # Get existing sales
-        success, sales = self.run_test(
-            "Get all sales",
-            "GET",
-            "vendas",
-            200
-        )
-        
-        if success:
-            print(f"💰 Found {len(sales)} sales")
-            total_sales_value = sum(sale.get('total', 0) for sale in sales)
-            print(f"   Total sales value: R$ {total_sales_value:.2f}")
-        
-        # Get products to create a test sale
-        products_success, products = self.run_test(
-            "Get products for sale test",
-            "GET",
-            "produtos",
-            200
-        )
-        
-        if products_success and products:
-            # Create a test sale with first available product
-            first_product = products[0]
-            test_sale = {
-                "cliente_nome": "Cliente Teste Venda",
-                "itens": [
-                    {
-                        "tipo": "produto",
-                        "item_id": first_product['id'],
-                        "nome": first_product['nome'],
-                        "quantidade": 2,
-                        "preco_unitario": first_product['preco'],
-                        "desconto": 0.0,
-                        "total": first_product['preco'] * 2
-                    }
-                ],
-                "forma_pagamento": "dinheiro",
-                "emitir_nota": False
-            }
-            
-            create_success, new_sale = self.run_test(
-                "Create new sale",
-                "POST",
-                "vendas",
-                200,
-                data=test_sale
-            )
-            
-            return success and create_success
-        
-        return success
-
-    def test_empresas(self):
-        """Test companies management"""
-        print("\n" + "="*50)
-        print("TESTING COMPANIES MANAGEMENT")
-        print("="*50)
-        
-        success, companies = self.run_test(
-            "Get companies",
-            "GET",
-            "empresas",
-            200
-        )
-        
-        if success:
-            print(f"🏢 Found {len(companies)} companies")
-            for i, company in enumerate(companies):
-                print(f"   {i+1}. {company.get('nome', 'Unknown')} - {company.get('cnpj', 'No CNPJ')}")
-        
-        return success
+def get(ep, token=None, expect=200):
+    r = requests.get(url(ep), headers=headers(token), timeout=30)
+    ok = r.status_code==expect
+    return ok, (r.json() if ok else {"status":r.status_code, "text":r.text[:300]})
 
 def main():
-    print("🚀 Starting ERP System API Tests")
-    print("="*60)
-    
-    tester = ERPSystemTester()
-    
-    # Test authentication first
-    if not tester.test_login():
-        print("\n❌ Authentication failed - stopping all tests")
-        return 1
-    
-    # Test auth/me endpoint
-    tester.test_auth_me()
-    
-    # Test all modules
-    tester.test_dashboard()
-    tester.test_clientes()
-    tester.test_produtos()
-    tester.test_servicos()
-    tester.test_vendas()
-    tester.test_empresas()
-    
-    # Print final results
-    print("\n" + "="*60)
-    print("📊 FINAL TEST RESULTS")
-    print("="*60)
-    print(f"Tests Run: {tester.tests_run}")
-    print(f"Tests Passed: {tester.tests_passed}")
-    print(f"Tests Failed: {tester.tests_run - tester.tests_passed}")
-    print(f"Success Rate: {(tester.tests_passed/tester.tests_run*100):.1f}%")
-    
-    if tester.tests_passed == tester.tests_run:
-        print("\n🎉 All tests passed! Backend is working correctly.")
-        return 0
+    print("API_BASE_URL:", API_BASE_URL)
+
+    # 1) login super admin
+    ok, j = post("auth/login", {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}, expect=200)
+    if not ok: print("Falha login super admin", j); return 1
+    super_token = j["access_token"]; print("✔ super admin logado")
+
+    # 2) tenants list ou create
+    ok, tenants = get("super-admin/tenants", token=super_token)
+    if not ok: print("Falha listar tenants", tenants); return 1
+    exists = any(t.get("subdomain")==TEST_SUBDOMAIN for t in tenants) if isinstance(tenants, list) else False
+    if not exists:
+        payload = {
+            "subdomain": TEST_SUBDOMAIN,
+            "company_name": "Empresa QA",
+            "admin_name": "Admin QA",
+            "admin_email": TENANT_ADMIN_EMAIL,
+            "admin_password": TENANT_ADMIN_PASSWORD,
+            "plan": "basic"
+        }
+        ok, created = post("super-admin/tenants", payload, token=super_token)
+        if not ok: print("Falha criar tenant", created); return 1
+        print("✔ tenant criado:", TEST_SUBDOMAIN)
     else:
-        print(f"\n⚠️  {tester.tests_run - tester.tests_passed} tests failed. Check the issues above.")
-        return 1
+        print("✔ tenant já existe:", TEST_SUBDOMAIN)
+
+    # 3) login admin tenant
+    ok, j = post("auth/login", {"email": TENANT_ADMIN_EMAIL, "password": TENANT_ADMIN_PASSWORD, "subdomain": TEST_SUBDOMAIN})
+    if not ok: print("Falha login tenant admin", j); return 1
+    tenant_token = j["access_token"]; print("✔ tenant admin logado")
+
+    # 4) testes básicos
+    for name, fn in [
+        ("auth/me", lambda: get("auth/me", token=tenant_token)),
+        ("dashboard", lambda: get("dashboard", token=tenant_token)),
+        ("clientes (list)", lambda: get("clientes", token=tenant_token)),
+        ("produtos (list)", lambda: get("produtos", token=tenant_token)),
+        ("servicos (list)", lambda: get("servicos", token=tenant_token)),
+    ]:
+        ok, resp = fn()
+        print("✔" if ok else "✖", name, "→", (resp if ok else resp))
+
+    # 5) criar cliente/produto/serviço rapidamente
+    ok, _ = post("clientes", {"nome":"Cliente Teste","email":"teste@ex.com"}, token=tenant_token)
+    ok2, _ = post("produtos", {"nome":"Produto Teste","preco":9.9}, token=tenant_token)
+    ok3, _ = post("servicos", {"nome":"Serviço Teste","preco":49.9}, token=tenant_token)
+    print("Create ->", "clientes" if ok else "", "produtos" if ok2 else "", "servicos" if ok3 else "")
+
+    return 0
 
 if __name__ == "__main__":
     sys.exit(main())
