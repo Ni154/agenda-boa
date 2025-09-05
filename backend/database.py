@@ -18,26 +18,21 @@ from sqlalchemy import (
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from sqlalchemy.ext.declarative import declarative_base
 
-# -----------------------------------------------------------------------------
 # DATABASE_URL obrigatório
-# -----------------------------------------------------------------------------
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is required")
 
-# -----------------------------------------------------------------------------
-# Engine + tipo de ID (UUID em Postgres, String em SQLite/outros)
-# -----------------------------------------------------------------------------
+# Engine + tipo de ID
 is_sqlite = DATABASE_URL.startswith("sqlite")
 
 if is_sqlite:
     engine = create_engine(
         DATABASE_URL, pool_pre_ping=True, connect_args={"check_same_thread": False}
     )
-    IdType = String(36)  # SQLite não tem UUID nativo
+    IdType = String(36)
 elif DATABASE_URL.startswith("postgresql://"):
     from sqlalchemy.dialects.postgresql import UUID
-
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
     IdType = UUID(as_uuid=True)
@@ -48,9 +43,7 @@ else:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# -----------------------------------------------------------------------------
-# MODELOS
-# -----------------------------------------------------------------------------
+# ------------------------------ MODELOS ------------------------------
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -64,16 +57,14 @@ class Tenant(Base):
     telefone = Column(String(20))
     email = Column(String(100))
 
-    # SaaS
-    plan = Column(String(20), default="basic")  # basic, premium, enterprise
+    plan = Column(String(20), default="basic")
     is_active = Column(Boolean, default=True)
     trial_ends_at = Column(DateTime(timezone=True))
-    subscription_status = Column(String(20), default="trial")  # trial, active, suspended, cancelled
+    subscription_status = Column(String(20), default="trial")
     stripe_customer_id = Column(String(100))
 
-    # Certificado
     usar_certificado = Column(Boolean, default=False)
-    certificado_config = Column(Text)  # JSON
+    certificado_config = Column(Text)
 
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(
@@ -82,16 +73,14 @@ class Tenant(Base):
         onupdate=datetime.now(timezone.utc),
     )
 
-    # Relacionamentos
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
     clientes = relationship("Cliente", back_populates="tenant", cascade="all, delete-orphan")
     produtos = relationship("Produto", back_populates="tenant", cascade="all, delete-orphan")
     servicos = relationship("Servico", back_populates="tenant", cascade="all, delete-orphan")
     vendas = relationship("Venda", back_populates="tenant", cascade="all, delete-orphan")
     agendamentos = relationship("Agendamento", back_populates="tenant", cascade="all, delete-orphan")
-    # IMPORTANTE: relação correta com back_populates
+    # relação correta com Vencimento
     vencimentos = relationship("Vencimento", back_populates="tenant", cascade="all, delete-orphan")
-
 
 class User(Base):
     __tablename__ = "users"
@@ -100,10 +89,10 @@ class User(Base):
     email = Column(String(100), nullable=False, index=True)
     name = Column(String(100), nullable=False)
     hashed_password = Column(String(200), nullable=False)
-    role = Column(String(20), nullable=False, default="operador")  # super_admin, admin_empresa, operador
+    role = Column(String(20), nullable=False, default="operador")
     is_active = Column(Boolean, default=True)
 
-    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=True)  # Null para super_admin
+    tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=True)
 
     reset_token = Column(String(200))
     reset_token_expires = Column(DateTime(timezone=True))
@@ -118,10 +107,7 @@ class User(Base):
     tenant = relationship("Tenant", back_populates="users")
     vendas = relationship("Venda", back_populates="vendedor")
 
-    __table_args__ = (
-        Index("idx_user_email_tenant", "email", "tenant_id", unique=True),
-    )
-
+    __table_args__ = (Index("idx_user_email_tenant", "email", "tenant_id", unique=True),)
 
 class Cliente(Base):
     __tablename__ = "clientes"
@@ -148,7 +134,6 @@ class Cliente(Base):
     vendas = relationship("Venda", back_populates="cliente")
     agendamentos = relationship("Agendamento", back_populates="cliente")
 
-
 class Produto(Base):
     __tablename__ = "produtos"
 
@@ -174,7 +159,6 @@ class Produto(Base):
 
     tenant = relationship("Tenant", back_populates="produtos")
 
-
 class Servico(Base):
     __tablename__ = "servicos"
 
@@ -183,7 +167,7 @@ class Servico(Base):
     descricao = Column(Text)
     duracao_minutos = Column(Integer, default=60)
     preco = Column(Float, nullable=False)
-    tributacao_iss = Column(Text)  # JSON
+    tributacao_iss = Column(Text)
 
     tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
 
@@ -195,7 +179,6 @@ class Servico(Base):
     )
 
     tenant = relationship("Tenant", back_populates="servicos")
-
 
 class Venda(Base):
     __tablename__ = "vendas"
@@ -228,7 +211,6 @@ class Venda(Base):
     cliente = relationship("Cliente", back_populates="vendas")
     vendedor = relationship("User", back_populates="vendas")
 
-
 class Agendamento(Base):
     __tablename__ = "agendamentos"
 
@@ -236,7 +218,7 @@ class Agendamento(Base):
     cliente_id = Column(IdType, ForeignKey("clientes.id"), nullable=False)
     servico_id = Column(IdType, ForeignKey("servicos.id"), nullable=False)
     data_hora = Column(DateTime(timezone=True), nullable=False)
-    status = Column(String(20), default="agendado")  # agendado, confirmado, realizado, cancelado
+    status = Column(String(20), default="agendado")
     observacoes = Column(Text)
 
     tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
@@ -252,15 +234,13 @@ class Agendamento(Base):
     cliente = relationship("Cliente", back_populates="agendamentos")
     servico = relationship("Servico")
 
-
-# ---------------------- Modelo de Vencimentos --------------------------
 class Vencimento(Base):
     __tablename__ = "vencimentos"
 
     id = Column(IdType, primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(IdType, ForeignKey("tenants.id"), nullable=False)
 
-    tipo = Column(String(50))                 # ex.: "mensalidade", "titulo", etc.
+    tipo = Column(String(50))
     descricao = Column(Text)
     valor = Column(Float, default=0.0)
     data_vencimento = Column(DateTime(timezone=True))
@@ -273,12 +253,9 @@ class Vencimento(Base):
         onupdate=datetime.now(timezone.utc),
     )
 
-    # lado oposto do relacionamento — sem overlaps
     tenant = relationship("Tenant", back_populates="vencimentos")
 
-# -----------------------------------------------------------------------------
-# Dependência de DB
-# -----------------------------------------------------------------------------
+# ------------------------------ DB utils ------------------------------
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
@@ -286,8 +263,5 @@ def get_db() -> Generator[Session, None, None]:
     finally:
         db.close()
 
-# -----------------------------------------------------------------------------
-# Criação de tabelas
-# -----------------------------------------------------------------------------
 def create_tables():
     Base.metadata.create_all(bind=engine)
