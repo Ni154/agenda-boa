@@ -1,11 +1,8 @@
+# frontend/netlify.toml
 [build]
-base = "frontend"
-publish = "build"
-command = "yarn install --frozen-lockfile || yarn install && yarn build"
-
-[build.environment]
-  NODE_VERSION = "20"
-  CI = "false"
+  base = "frontend"
+  publish = "build"
+  command = "yarn install --frozen-lockfile || yarn install && yarn build"
 
 [[redirects]]
   from = "/api/*"
