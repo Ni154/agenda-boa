@@ -18,7 +18,7 @@ import json
 import uuid
 import logging
 import secrets
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, timezone
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -672,6 +672,13 @@ async def startup_event():
             logger.info("Super admin already exists")
     finally:
         db.close()
+@app.get('/health', include_in_schema=False)
+def health_root():
+    return {'status': 'ok', 'time': datetime.now(timezone.utc).isoformat()}
+
+@app.get('/api/health', include_in_schema=False)
+def health_api():
+    return {'status': 'ok', 'time': datetime.now(timezone.utc).isoformat()}
 
 @app.get("/", tags=["Info"])
 def root_info():
