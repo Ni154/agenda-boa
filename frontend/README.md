@@ -10,7 +10,7 @@ Guia rápido para desenvolvimento local e deploy em **Netlify** (frontend) e **R
 
 ### Frontend (Netlify / desenvolvimento)
 - **`REACT_APP_BACKEND_URL`** → URL base do backend **sem** `/api` no final.  
-  - Ex.: Produção (Railway): `https://SEU-BACKEND.up.railway.app`  
+  - Ex.: Produção (Railway): `https://agenda-boa-production.up.railway.app  
   - Ex.: Local: `http://localhost:8000`
 
 > O código já usa `process.env.REACT_APP_BACKEND_URL` e **acrescenta `/api`** internamente:
@@ -20,11 +20,11 @@ Guia rápido para desenvolvimento local e deploy em **Netlify** (frontend) e **R
 > ```
 
 ### Backend (Railway)
-- **`DATABASE_URL`** → sua conexão Postgres (Railway)  
-- **`RESEND_API_KEY`** → sua chave Resend
-- **`RESEND_FROM`** → remetente (ex.: `ERP Sistema <seu-email@dominio.com>`)
-- **`CORS_ORIGINS`** (ou `CORS_ALLOWED_ORIGINS`) → URL do seu site no Netlify
-- **`JWT_SECRET`** → (opcional) segredo do JWT
+- **`DATABASE_URL`** postgresql://postgres:DWhczIuDafsKhzEmiNBzMhdSOBBQnxJR@postgres.railway.internal:5432/railway (Railway)  
+- **`RESEND_API_KEY`** Bm7kn19W_9ZSWGeMdPyRg2VguUFMHz8DS
+- **`RESEND_FROM`** → nsautomacaoolinda@gmail.com
+- **`CORS_ORIGINS`** [(ou `CORS_ALLOWED_ORIGINS`) → URL do seu site no Netlify](https://agenda-boa.netlify.app)
+- **`JWT_SECRET`** → m7kn19W_9ZSWGeMdPyRg2VguUFMHz8DS
 
 ---
 
