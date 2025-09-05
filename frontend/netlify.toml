@@ -1,8 +1,7 @@
-# frontend/netlify.toml
 [build]
   base = "frontend"
-  publish = "build"
   command = "yarn install --frozen-lockfile || yarn install && yarn build"
+  publish = "frontend/build"
 
 [[redirects]]
   from = "/api/*"
