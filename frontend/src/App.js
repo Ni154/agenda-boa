@@ -1,5 +1,4 @@
-/* App.js */
-
+// src/App.js
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
@@ -16,64 +15,36 @@ import Agendamentos from './components/Agendamentos';
 import Sidebar from './components/Sidebar';
 import { Toaster } from './components/ui/sonner';
 
-/**
- * Estratégia para descobrir a base da API:
- * 1) REACT_APP_API_BASE_URL -> base completa (já com /api), ex.: https://seu-backend.up.railway.app/api
- * 2) REACT_APP_BACKEND_URL  -> host/base do backend; acrescenta /api
- * 3) fallback '/api'         -> usa proxy/redirects do Netlify
- */
-const API_BASE = (() => {
-  const full = (process.env.REACT_APP_API_BASE_URL || '').trim();
-  const host = (process.env.REACT_APP_BACKEND_URL || '').trim();
+const API_BASE = (process.env.REACT_APP_API_BASE_URL || '/api').trim().replace(/\/+$/, '') || '/api';
 
-  if (full.length > 0) {
-    // remove barras no final
-    return full.replace(/\/+$/, '');
-  }
-  if (host.length > 0) {
-    // remove barras no final e acrescenta /api
-    return host.replace(/\/+$/, '') + '/api';
-  }
-  // usa redirects do Netlify
-  return '/api';
-})();
-
-// Axios instance
 export const api = axios.create({
   baseURL: API_BASE,
 });
 
-// Interceptor: adiciona token
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// Interceptor: trata 401
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error?.response?.status === 401) {
+  (r) => r,
+  (err) => {
+    if (err.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
     }
-    return Promise.reject(error);
+    return Promise.reject(err);
   }
 );
 
 // Auth Context
 const AuthContext = React.createContext();
-
 export const useAuth = () => {
-  const context = React.useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = React.useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+  return ctx;
 };
 
 const AuthProvider = ({ children }) => {
@@ -83,18 +54,16 @@ const AuthProvider = ({ children }) => {
   useEffect(() => {
     const token = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
-    if (token && userData) {
-      setUser(JSON.parse(userData));
-    }
+    if (token && userData) setUser(JSON.parse(userData));
     setLoading(false);
   }, []);
 
   const login = async (email, password, subdomain = null) => {
     try {
       const payload = { email, password };
-      if (subdomain && subdomain.trim()) {
-        payload.subdomain = subdomain.trim();
-      }
+      if (subdomain && subdomain.trim()) payload.subdomain = subdomain.trim();
+
+      // IMPORTANTE: caminho começa com /api (baseURL já é /api)
       const { data } = await api.post('/auth/login', payload);
       const { access_token, user: userData } = data;
 
@@ -105,7 +74,7 @@ const AuthProvider = ({ children }) => {
     } catch (error) {
       return {
         success: false,
-        message: error?.response?.data?.detail || 'Erro ao fazer login',
+        message: error.response?.data?.detail || 'Erro ao fazer login',
       };
     }
   };
@@ -116,7 +85,7 @@ const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
-  const value = { user, login, logout };
+  const value = { user, login, logout, api };
 
   if (loading) {
     return (
@@ -129,13 +98,13 @@ const AuthProvider = ({ children }) => {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// Rota protegida
+// Protected Route
 const ProtectedRoute = ({ children }) => {
   const { user } = useAuth();
   return user ? children : <Navigate to="/login" replace />;
 };
 
-// Layout principal
+// Main Layout
 const MainLayout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
