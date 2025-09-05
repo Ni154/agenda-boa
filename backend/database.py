@@ -1,10 +1,14 @@
-# database.py (PT-BR vars) — ajustado para URL_DO_BANCO_DE_DADOS
+# database.py — FIX FINAL (sem SAWarning e compatível com PT-BR env)
+# Mudanças chave:
+# - Usa URL_DO_BANCO_DE_DADOS (fallback DATABASE_URL)
+# - Par de relacionamentos Tenant.vencimentos <-> Vencimento.tenant com back_populates
+# - overlaps nas DUAS pontas (extra seguro)
+# - UUID default correto para Postgres/SQLite
 from sqlalchemy import create_engine, Column, String, DateTime, Boolean, Float, Integer, Text, ForeignKey, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from datetime import datetime, timezone
-import uuid
-import os
+import uuid, os
 from typing import Generator
 
 def get_env_any(names, default=None):
@@ -39,7 +43,7 @@ else:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# -------------------- MODELS --------------------
+# -------------------- MODELOS --------------------
 class Tenant(Base):
     __tablename__ = 'tenants'
     id = Column(IdType, primary_key=True, default=default_id)
@@ -67,7 +71,8 @@ class Tenant(Base):
     servicos = relationship('Servico', back_populates='tenant', cascade='all, delete-orphan')
     vendas = relationship('Venda', back_populates='tenant', cascade='all, delete-orphan')
     agendamentos = relationship('Agendamento', back_populates='tenant', cascade='all, delete-orphan')
-    vencimentos = relationship('Vencimento', back_populates='tenant', cascade='all, delete-orphan')
+    # overlaps aqui é extra‑segurança: informa ao ORM que compartilha colunas com Vencimento.tenant
+    vencimentos = relationship('Vencimento', back_populates='tenant', cascade='all, delete-orphan', overlaps="tenant")
 
 class User(Base):
     __tablename__ = 'users'
@@ -188,9 +193,10 @@ class Vencimento(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
+    # back_populates + overlaps = sem SAWarning
     tenant = relationship('Tenant', back_populates='vencimentos', overlaps="vencimentos")
 
-# -------------------- DEPENDENCY & DDL --------------------
+# -------------------- DEPENDÊNCIA & DDL --------------------
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
