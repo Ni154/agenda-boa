@@ -1,993 +1,407 @@
-# server.py — FastAPI ERP SaaS (import relativo, sem duplicatas)
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Request, Response
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, Field
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
-from passlib.context import CryptContext
-from jose import JWTError, jwt
-from pathlib import Path
-from dotenv import load_dotenv
+# server.py
 import os
 import logging
-import uuid
-import secrets
-import json
-import resend
+from datetime import datetime, timedelta, timezone
+from typing import Optional, List, Generator, Any
 
-# ------------------------------------------------------------
-# Env
-# ------------------------------------------------------------
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / ".env")
+from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRouter
+from pydantic import BaseModel, EmailStr, Field
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
-# ------------------------------------------------------------
-# Banco (IMPORT RELATIVO — porque server.py e database.py estão no mesmo pacote)
-# NÃO USE import "database" absoluto aqui.
-# ------------------------------------------------------------
-from .database import (  # type: ignore
-    get_db, create_tables, SessionLocal,
-    Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, Vencimento,
-)
-from sqlalchemy.orm import Session
-
-# ------------------------------------------------------------
-# Config
-# ------------------------------------------------------------
-def _env(name: str, default: Optional[str] = None) -> Optional[str]:
-    v = os.environ.get(name)
-    return v if v and len(v.strip()) > 0 else default
-
-SECRET_KEY = _env("JWT_SECRET", "change-me-please")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(_env("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24h
-RESEND_API_KEY = _env("RESEND_API_KEY")
-RESEND_FROM = _env("RESEND_FROM", "noreply@sistema.com")
-FRONTEND_URL = _env("FRONTEND_URL", "http://localhost:3000")
-ADMIN_EMAIL = _env("ADMIN_EMAIL", "admin@sistema.com")
-ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "admin123")
-
-# CORS: aceita várias variáveis de ambiente
-def _parse_cors() -> List[str]:
-    raw = (
-        _env("CORS_ALLOWED_ORIGINS")  # inglês
-        or _env("CORS_ORIGINS")
-        or _env("CORS_ORIGENS_PERMITIDAS")  # pt-br
-        or "*"
+# -------------------------------------------------------------------
+# Import dos modelos / sessão (funciona com arquivo ao lado OU pacote)
+# -------------------------------------------------------------------
+try:
+    # quando server.py e database.py estão dentro do mesmo pacote
+    from .database import (
+        Base, SessionLocal, get_db, create_tables,
+        Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, Vencimento
     )
-    if raw.strip() == "*":
-        return ["*"]
-    parts = [p.strip() for p in raw.replace(";", ",").split(",") if p.strip()]
-    return parts or ["*"]
+except Exception:
+    # quando os dois arquivos estão lado a lado (sem pacote)
+    from database import (
+        Base, SessionLocal, get_db, create_tables,
+        Tenant, User, Cliente, Produto, Servico, Venda, Agendamento, Vencimento
+    )
 
-CORS_ORIGINS = _parse_cors()
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 
-# Resend
-if RESEND_API_KEY:
-    resend.api_key = RESEND_API_KEY
+# -------------------------------------------------------------------
+# Configurações / Variáveis de Ambiente
+# -------------------------------------------------------------------
+JWT_SECRET = os.getenv("JWT_SECRET", "change-me-please")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-security = HTTPBearer()
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
 
-# ------------------------------------------------------------
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://agenda-boa.netlify.app")
+
+# Para aceitar o domínio principal e também os deploy previews (.netlify.app)
+DEFAULT_CORS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://agenda-boa.netlify.app",
+]
+if FRONTEND_URL and FRONTEND_URL not in DEFAULT_CORS:
+    DEFAULT_CORS.append(FRONTEND_URL)
+
+# -------------------------------------------------------------------
+# Segurança (hash de senha) — evitando backend do bcrypt problemático
+# -------------------------------------------------------------------
+# Usamos pbkdf2_sha256 para evitar o warning do backend bcrypt no Railway
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
+def hash_password(pwd: str) -> str:
+    return pwd_context.hash(pwd)
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, JWT_SECRET, algorithm="HS256")
+
+def decode_token(token: str) -> dict:
+    return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+
+# -------------------------------------------------------------------
 # App
-# ------------------------------------------------------------
-app = FastAPI(title="ERP SaaS - Sistema de Gestão Empresarial", version="2.0.0")
+# -------------------------------------------------------------------
+app = FastAPI(title="Agenda Boa API", version="1.0.0")
 
-# CORS middleware
+# CORS: libera domínio de produção + prévias (netlify.app)
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=DEFAULT_CORS,
+    allow_origin_regex=r"https://.*\.netlify\.app$",
     allow_credentials=True,
-    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ------------------------------------------------------------
-# Utils / Helpers
-# ------------------------------------------------------------
-class UserRole:
-    SUPER_ADMIN = "super_admin"
-    ADMIN_EMPRESA = "admin_empresa"
-    OPERADOR = "operador"
+log = logging.getLogger("server")
+logging.basicConfig(level=logging.INFO)
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=15))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-def generate_reset_token() -> str:
-    return secrets.token_urlsafe(32)
-
-def send_email(to_email: str, subject: str, html_content: str) -> bool:
-    if not RESEND_API_KEY:
-        # modo simulado em dev
-        print(f"[EMAIL SIMULADO] Para: {to_email} | Assunto: {subject}")
-        return True
-    try:
-        resend.Emails.send({
-            "from": RESEND_FROM,
-            "to": [to_email],
-            "subject": subject,
-            "html": html_content,
-        })
-        return True
-    except Exception as e:
-        print(f"[EMAIL ERRO] {e}")
-        return False
-
-# ------------------------------------------------------------
-# Schemas
-# ------------------------------------------------------------
-class TenantCreate(BaseModel):
-    subdomain: str = Field(..., min_length=3, max_length=50)
-    company_name: str = Field(..., min_length=1, max_length=200)
-    cnpj: Optional[str] = None
-    razao_social: Optional[str] = None
-    admin_name: str = Field(..., min_length=1, max_length=100)
-    admin_email: EmailStr
-    admin_password: str = Field(..., min_length=6)
-    plan: str = Field(default="basic")
-
-class TenantResponse(BaseModel):
-    id: str
-    subdomain: str
-    company_name: str
-    cnpj: Optional[str]
-    is_active: bool
-    plan: str
-    subscription_status: str
-    created_at: datetime
-
-class UserCreate(BaseModel):
-    email: EmailStr
-    name: str
-    password: str
-    role: str = UserRole.OPERADOR
-
-class UserLogin(BaseModel):
+# -------------------------------------------------------------------
+# Schemas Pydantic
+# -------------------------------------------------------------------
+class LoginRequest(BaseModel):
     email: EmailStr
     password: str
     subdomain: Optional[str] = None
 
-class UserResponse(BaseModel):
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: dict
+
+class UserOut(BaseModel):
     id: str
-    email: str
+    email: EmailStr
     name: str
     role: str
-    tenant_id: Optional[str]
-    is_active: bool
+    tenant_id: Optional[str] = None
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-    user: UserResponse
-
-class PasswordResetRequest(BaseModel):
-    email: EmailStr
-    subdomain: Optional[str] = None
-
-class PasswordReset(BaseModel):
-    token: str
-    new_password: str = Field(..., min_length=6)
-
-class ClienteCreate(BaseModel):
+class ClienteIn(BaseModel):
     nome: str
     email: Optional[EmailStr] = None
     telefone: Optional[str] = None
     cpf_cnpj: Optional[str] = None
     endereco: Optional[str] = None
+    foto_url: Optional[str] = None
     anamnese: Optional[str] = None
 
-class ClienteResponse(BaseModel):
+class ClienteOut(ClienteIn):
     id: str
-    nome: str
-    email: Optional[str]
-    telefone: Optional[str]
-    cpf_cnpj: Optional[str]
-    endereco: Optional[str]
-    foto_url: Optional[str]
-    anamnese: Optional[str]
-    created_at: datetime
 
-class ProdutoCreate(BaseModel):
-    codigo: Optional[str] = None
+class ProdutoIn(BaseModel):
     nome: str
+    preco: float
+    codigo: Optional[str] = None
     descricao: Optional[str] = None
     categoria: Optional[str] = None
     ncm: Optional[str] = None
-    custo: float = 0.0
-    preco: float
-    estoque_atual: int = 0
-    estoque_minimo: int = 0
+    custo: Optional[float] = 0.0
+    estoque_atual: Optional[int] = 0
+    estoque_minimo: Optional[int] = 0
 
-class ProdutoResponse(BaseModel):
+class ProdutoOut(ProdutoIn):
     id: str
-    codigo: Optional[str]
-    nome: str
-    descricao: Optional[str]
-    categoria: Optional[str]
-    ncm: Optional[str]
-    custo: float
-    preco: float
-    estoque_atual: int
-    estoque_minimo: int
-    created_at: datetime
 
-class ServicoCreate(BaseModel):
+class ServicoIn(BaseModel):
     nome: str
+    preco: float
     descricao: Optional[str] = None
-    duracao_minutos: int = 60
-    preco: float
-    tributacao_iss: Optional[Dict[str, Any]] = None
+    duracao_minutos: Optional[int] = 60
+    tributacao_iss: Optional[str] = None
 
-class ServicoResponse(BaseModel):
+class ServicoOut(ServicoIn):
     id: str
+
+class VendaItem(BaseModel):
+    produto_id: Optional[str] = None
+    servico_id: Optional[str] = None
     nome: str
-    descricao: Optional[str]
-    duracao_minutos: int
+    quantidade: int
     preco: float
-    tributacao_iss: Optional[Dict[str, Any]]
-    created_at: datetime
-
-class ItemVenda(BaseModel):
-    tipo: str  # "produto" ou "servico"
-    item_id: str
-    nome: str
-    quantidade: float
-    preco_unitario: float
     desconto: float = 0.0
-    total: float
 
-class VendaCreate(BaseModel):
+class VendaIn(BaseModel):
     cliente_id: Optional[str] = None
     cliente_nome: Optional[str] = None
-    itens: List[ItemVenda]
+    itens: List[VendaItem]
     forma_pagamento: str
     emitir_nota: bool = False
 
-class VendaResponse(BaseModel):
-    id: str
-    cliente_id: Optional[str]
-    cliente_nome: Optional[str]
-    itens: List[ItemVenda]
-    subtotal: float
-    desconto_total: float
-    total: float
-    forma_pagamento: str
-    emitir_nota: bool
-    status_nota: Optional[str]
-    created_at: datetime
-
-class AgendamentoCreate(BaseModel):
+class AgendamentoIn(BaseModel):
     cliente_id: str
     servico_id: str
     data_hora: datetime
-    status: str = "agendado"
+    status: Optional[str] = "agendado"
     observacoes: Optional[str] = None
 
-class AgendamentoResponse(BaseModel):
-    id: str
-    cliente_id: str
-    servico_id: str
-    data_hora: datetime
-    status: str
-    observacoes: Optional[str]
-    created_at: datetime
+# -------------------------------------------------------------------
+# Dependências
+# -------------------------------------------------------------------
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+auth_scheme = HTTPBearer(auto_error=False)
 
-class Dashboard(BaseModel):
-    total_vendas: float
-    total_despesas: float
-    lucro: float
-    margem_lucro: float
-    itens_estoque: int
-    agendamentos_hoje: int
-    vendas_periodo: List[Dict[str, Any]]
-    top_produtos: List[Dict[str, Any]]
-
-class SuperAdminDashboard(BaseModel):
-    total_tenants: int
-    active_tenants: int
-    trial_tenants: int
-    suspended_tenants: int
-    total_users: int
-    monthly_revenue: float
-    recent_signups: List[Dict[str, Any]]
-
-# ------------------------------------------------------------
-# Auth dependencies
-# ------------------------------------------------------------
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+def get_current_user(
+    creds: HTTPAuthorizationCredentials = Depends(auth_scheme),
     db: Session = Depends(get_db)
-):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+) -> User:
+    if not creds or not creds.scheme.lower() == "bearer":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente")
+    token = creds.credentials
     try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            raise credentials_exception
+        payload = decode_token(token)
+        user_id: str = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Token inválido")
+        user = db.get(User, user_id)
+        if not user or not user.is_active:
+            raise HTTPException(status_code=401, detail="Usuário inválido")
+        return user
     except JWTError:
-        raise credentials_exception
-
-    user = db.query(User).filter(User.email == email).first()
-    if user is None:
-        raise credentials_exception
-
-    if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
-
-    return user
-
-async def get_current_tenant(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    if current_user.role == UserRole.SUPER_ADMIN:
-        return None
-
-    if not current_user.tenant_id:
-        raise HTTPException(status_code=400, detail="User not associated with any tenant")
-
-    tenant = db.query(Tenant).filter(Tenant.id == current_user.tenant_id).first()
-    if not tenant:
-        raise HTTPException(status_code=400, detail="Tenant not found")
-
-    if not tenant.is_active:
-        raise HTTPException(status_code=403, detail="Tenant account suspended")
-
-    return tenant
-
-# ------------------------------------------------------------
-# Rotas base
-# ------------------------------------------------------------
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-@app.get("/favicon.ico")
-def favicon():
-    # evita 404/502 em plataformas que batem no favicon
-    return Response(status_code=204)
-
-@app.get("/")
-def root():
-    return {"name": "ERP SaaS API", "status": "online"}
-
-api_router = APIRouter(prefix="/api")
-
-# ------------------------------------------------------------
-# Super Admin
-# ------------------------------------------------------------
-@api_router.post("/super-admin/tenants", response_model=TenantResponse)
-async def create_tenant(
-    tenant_data: TenantCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    if current_user.role != UserRole.SUPER_ADMIN:
-        raise HTTPException(status_code=403, detail="Only super admin can create tenants")
-
-    existing = db.query(Tenant).filter(Tenant.subdomain == tenant_data.subdomain).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Subdomain already exists")
-
-    tenant = Tenant(
-        subdomain=tenant_data.subdomain,
-        company_name=tenant_data.company_name,
-        cnpj=tenant_data.cnpj,
-        razao_social=tenant_data.razao_social,
-        plan=tenant_data.plan,
-        trial_ends_at=datetime.now(timezone.utc) + timedelta(days=30),
-    )
-    db.add(tenant)
-    db.flush()
-
-    admin_user = User(
-        email=tenant_data.admin_email,
-        name=tenant_data.admin_name,
-        hashed_password=get_password_hash(tenant_data.admin_password),
-        role=UserRole.ADMIN_EMPRESA,
-        tenant_id=tenant.id,
-    )
-    db.add(admin_user)
-    db.commit()
-
-    welcome_html = f"""
-    <h1>Bem-vindo ao ERP Sistema!</h1>
-    <p>Olá {tenant_data.admin_name},</p>
-    <p>Sua conta foi criada com sucesso!</p>
-    <p><strong>Subdomínio:</strong> {tenant_data.subdomain}</p>
-    <p><strong>Email:</strong> {tenant_data.admin_email}</p>
-    <p><strong>URL de acesso:</strong> <a href="{FRONTEND_URL}">{FRONTEND_URL}</a></p>
-    <p>Você tem 30 dias de trial gratuito para testar todas as funcionalidades.</p>
-    """
-    send_email(tenant_data.admin_email, "Bem-vindo ao ERP Sistema", welcome_html)
-
-    return TenantResponse(
-        id=str(tenant.id),
-        subdomain=tenant.subdomain,
-        company_name=tenant.company_name,
-        cnpj=tenant.cnpj,
-        is_active=tenant.is_active,
-        plan=tenant.plan,
-        subscription_status=tenant.subscription_status,
-        created_at=tenant.created_at,
-    )
-
-@api_router.get("/super-admin/tenants", response_model=List[TenantResponse])
-async def get_all_tenants(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    if current_user.role != UserRole.SUPER_ADMIN:
-        raise HTTPException(status_code=403, detail="Only super admin can view all tenants")
-
-    tenants = db.query(Tenant).all()
-    return [
-        TenantResponse(
-            id=str(t.id),
-            subdomain=t.subdomain,
-            company_name=t.company_name,
-            cnpj=t.cnpj,
-            is_active=t.is_active,
-            plan=t.plan,
-            subscription_status=t.subscription_status,
-            created_at=t.created_at,
-        ) for t in tenants
-    ]
-
-@api_router.put("/super-admin/tenants/{tenant_id}/toggle-status")
-async def toggle_tenant_status(
-    tenant_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    if current_user.role != UserRole.SUPER_ADMIN:
-        raise HTTPException(status_code=403, detail="Only super admin can toggle tenant status")
-
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-
-    tenant.is_active = not tenant.is_active
-    tenant.subscription_status = "active" if tenant.is_active else "suspended"
-    db.commit()
-    return {"message": f"Tenant {'activated' if tenant.is_active else 'suspended'} successfully"}
-
-@api_router.get("/super-admin/dashboard", response_model=SuperAdminDashboard)
-async def get_super_admin_dashboard(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    if current_user.role != UserRole.SUPER_ADMIN:
-        raise HTTPException(status_code=403, detail="Only super admin can view admin dashboard")
-
-    total_tenants = db.query(Tenant).count()
-    active_tenants = db.query(Tenant).filter(Tenant.is_active == True).count()
-    trial_tenants = db.query(Tenant).filter(Tenant.subscription_status == "trial").count()
-    suspended_tenants = db.query(Tenant).filter(Tenant.is_active == False).count()
-    total_users = db.query(User).filter(User.role != UserRole.SUPER_ADMIN).count()
-
-    recent_tenants = db.query(Tenant).order_by(Tenant.created_at.desc()).limit(5).all()
-    recent_signups = [{
-        "company_name": t.company_name,
-        "subdomain": t.subdomain,
-        "created_at": t.created_at.isoformat(),
-        "plan": t.plan,
-    } for t in recent_tenants]
-
-    return SuperAdminDashboard(
-        total_tenants=total_tenants,
-        active_tenants=active_tenants,
-        trial_tenants=trial_tenants,
-        suspended_tenants=suspended_tenants,
-        total_users=total_users,
-        monthly_revenue=0.0,  # integrar com billing depois
-        recent_signups=recent_signups,
-    )
-
-# ------------------------------------------------------------
-# Auth
-# ------------------------------------------------------------
-@api_router.post("/auth/login", response_model=Token)
-async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
-    query = db.query(User).filter(User.email == user_credentials.email)
-
-    if user_credentials.subdomain:
-        tenant = db.query(Tenant).filter(Tenant.subdomain == user_credentials.subdomain).first()
-        if not tenant:
-            raise HTTPException(status_code=400, detail="Invalid subdomain")
-        query = query.filter(User.tenant_id == tenant.id)
-    else:
-        query = query.filter(User.tenant_id.is_(None))
-
-    user = query.first()
-    if not user or not verify_password(user_credentials.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
-
-    if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
-
-    if user.tenant_id:
-        tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
-        if not tenant or not tenant.is_active:
-            raise HTTPException(status_code=403, detail="Account suspended")
-
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(data={"sub": user.email}, expires_delta=access_token_expires)
-
-    return Token(
-        access_token=access_token,
-        token_type="bearer",
-        user=UserResponse(
-            id=str(user.id),
-            email=user.email,
-            name=user.name,
-            role=user.role,
-            tenant_id=str(user.tenant_id) if user.tenant_id else None,
-            is_active=user.is_active,
-        ),
-    )
-
-@api_router.post("/auth/forgot-password")
-async def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)):
-    query = db.query(User).filter(User.email == request.email)
-    if request.subdomain:
-        tenant = db.query(Tenant).filter(Tenant.subdomain == request.subdomain).first()
-        if tenant:
-            query = query.filter(User.tenant_id == tenant.id)
-
-    user = query.first()
-    if not user:
-        return {"message": "If the email exists, a reset link has been sent"}
-
-    token = generate_reset_token()
-    user.reset_token = token
-    user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
-    db.commit()
-
-    reset_url = f"{FRONTEND_URL}/reset-password?token={token}"
-    reset_html = f"""
-    <h1>Redefinir Senha</h1>
-    <p>Olá {user.name},</p>
-    <p><a href="{reset_url}">Clique aqui para redefinir sua senha</a></p>
-    <p>Este link expira em 1 hora.</p>
-    """
-    send_email(user.email, "Redefinir Senha - ERP Sistema", reset_html)
-    return {"message": "If the email exists, a reset link has been sent"}
-
-@api_router.post("/auth/reset-password")
-async def reset_password(request: PasswordReset, db: Session = Depends(get_db)):
-    user = db.query(User).filter(
-        User.reset_token == request.token,
-        User.reset_token_expires > datetime.now(timezone.utc),
-    ).first()
-    if not user:
-        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
-
-    user.hashed_password = get_password_hash(request.new_password)
-    user.reset_token = None
-    user.reset_token_expires = None
-    db.commit()
-    return {"message": "Password reset successfully"}
-
-@api_router.get("/auth/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
-    return UserResponse(
-        id=str(current_user.id),
-        email=current_user.email,
-        name=current_user.name,
-        role=current_user.role,
-        tenant_id=str(current_user.tenant_id) if current_user.tenant_id else None,
-        is_active=current_user.is_active,
-    )
-
-# ------------------------------------------------------------
-# Dashboard
-# ------------------------------------------------------------
-@api_router.get("/dashboard", response_model=Dashboard)
-async def get_dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.role == UserRole.SUPER_ADMIN:
-        # reaproveita super-admin dashboard
-        sad = await get_super_admin_dashboard(current_user, db)
-        # preenche estrutura de Dashboard com zeros para não quebrar tipagem do front (ou você pode separar rota)
-        return Dashboard(
-            total_vendas=0.0,
-            total_despesas=0.0,
-            lucro=0.0,
-            margem_lucro=0.0,
-            itens_estoque=0,
-            agendamentos_hoje=0,
-            vendas_periodo=[],
-            top_produtos=[],
-        )
-
-    if not current_user.tenant_id:
-        raise HTTPException(status_code=400, detail="User not associated with any tenant")
-
-    tenant = db.query(Tenant).filter(Tenant.id == current_user.tenant_id).first()
-    if not tenant or not tenant.is_active:
-        raise HTTPException(status_code=403, detail="Tenant account suspended")
-
-    vendas = db.query(Venda).filter(Venda.tenant_id == tenant.id).all()
-    produtos = db.query(Produto).filter(Produto.tenant_id == tenant.id).all()
-
-    total_vendas = sum(v.total for v in vendas)
-    total_despesas = 0.0
-    lucro = total_vendas - total_despesas
-    margem_lucro = (lucro / total_vendas * 100) if total_vendas > 0 else 0.0
-    itens_estoque = sum(p.estoque_atual for p in produtos)
-    agendamentos_hoje = 0
-
-    vendas_periodo = [
-        {"data": "2024-09-01", "valor": 1000},
-        {"data": "2024-09-02", "valor": 1500},
-        {"data": "2024-09-03", "valor": 2000},
-    ]
-    top_produtos = [
-        {"nome": "Produto A", "vendas": 50},
-        {"nome": "Produto B", "vendas": 30},
-        {"nome": "Produto C", "vendas": 20},
-    ]
-
-    return Dashboard(
-        total_vendas=total_vendas,
-        total_despesas=total_despesas,
-        lucro=lucro,
-        margem_lucro=margem_lucro,
-        itens_estoque=itens_estoque,
-        agendamentos_hoje=agendamentos_hoje,
-        vendas_periodo=vendas_periodo,
-        top_produtos=top_produtos,
-    )
-
-# ------------------------------------------------------------
-# Clientes
-# ------------------------------------------------------------
-@api_router.post("/clientes", response_model=ClienteResponse)
-async def create_cliente(
-    cliente_data: ClienteCreate,
-    current_user: User = Depends(get_current_user),
-    tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
-):
-    cliente = Cliente(**cliente_data.dict(), tenant_id=tenant.id)
-    db.add(cliente)
-    db.commit()
-    db.refresh(cliente)
-    return ClienteResponse(
-        id=str(cliente.id),
-        nome=cliente.nome,
-        email=cliente.email,
-        telefone=cliente.telefone,
-        cpf_cnpj=cliente.cpf_cnpj,
-        endereco=cliente.endereco,
-        foto_url=cliente.foto_url,
-        anamnese=cliente.anamnese,
-        created_at=cliente.created_at,
-    )
-
-@api_router.get("/clientes", response_model=List[ClienteResponse])
-async def get_clientes(
-    current_user: User = Depends(get_current_user),
-    tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
-):
-    clientes = db.query(Cliente).filter(Cliente.tenant_id == tenant.id).all()
-    return [
-        ClienteResponse(
-            id=str(c.id),
-            nome=c.nome,
-            email=c.email,
-            telefone=c.telefone,
-            cpf_cnpj=c.cpf_cnpj,
-            endereco=c.endereco,
-            foto_url=c.foto_url,
-            anamnese=c.anamnese,
-            created_at=c.created_at,
-        )
-        for c in clientes
-    ]
-
-# ------------------------------------------------------------
-# Produtos
-# ------------------------------------------------------------
-@api_router.post("/produtos", response_model=ProdutoResponse)
-async def create_produto(
-    produto_data: ProdutoCreate,
-    current_user: User = Depends(get_current_user),
-    tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
-):
-    produto = Produto(**produto_data.dict(), tenant_id=tenant.id)
-    db.add(produto)
-    db.commit()
-    db.refresh(produto)
-    return ProdutoResponse(
-        id=str(produto.id),
-        codigo=produto.codigo,
-        nome=produto.nome,
-        descricao=produto.descricao,
-        categoria=produto.categoria,
-        ncm=produto.ncm,
-        custo=produto.custo,
-        preco=produto.preco,
-        estoque_atual=produto.estoque_atual,
-        estoque_minimo=produto.estoque_minimo,
-        created_at=produto.created_at,
-    )
-
-@api_router.get("/produtos", response_model=List[ProdutoResponse])
-async def get_produtos(
-    current_user: User = Depends(get_current_user),
-    tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
-):
-    produtos = db.query(Produto).filter(Produto.tenant_id == tenant.id).all()
-    return [
-        ProdutoResponse(
-            id=str(p.id),
-            codigo=p.codigo,
-            nome=p.nome,
-            descricao=p.descricao,
-            categoria=p.categoria,
-            ncm=p.ncm,
-            custo=p.custo,
-            preco=p.preco,
-            estoque_atual=p.estoque_atual,
-            estoque_minimo=p.estoque_minimo,
-            created_at=p.created_at,
-        )
-        for p in produtos
-    ]
-
-# ------------------------------------------------------------
-# Serviços
-# ------------------------------------------------------------
-@api_router.post("/servicos", response_model=ServicoResponse)
-async def create_servico(
-    servico_data: ServicoCreate,
-    current_user: User = Depends(get_current_user),
-    tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
-):
-    sdict = servico_data.dict()
-    if sdict.get("tributacao_iss"):
-        sdict["tributacao_iss"] = json.dumps(sdict["tributacao_iss"])
-    servico = Servico(**sdict, tenant_id=tenant.id)
-    db.add(servico)
-    db.commit()
-    db.refresh(servico)
-
-    trib = None
-    if servico.tributacao_iss:
-        try:
-            trib = json.loads(servico.tributacao_iss)
-        except Exception:
-            pass
-
-    return ServicoResponse(
-        id=str(servico.id),
-        nome=servico.nome,
-        descricao=servico.descricao,
-        duracao_minutos=servico.duracao_minutos,
-        preco=servico.preco,
-        tributacao_iss=trib,
-        created_at=servico.created_at,
-    )
-
-@api_router.get("/servicos", response_model=List[ServicoResponse])
-async def get_servicos(
-    current_user: User = Depends(get_current_user),
-    tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
-):
-    servicos = db.query(Servico).filter(Servico.tenant_id == tenant.id).all()
-    result: List[ServicoResponse] = []
-    for s in servicos:
-        trib = None
-        if s.tributacao_iss:
-            try:
-                trib = json.loads(s.tributacao_iss)
-            except Exception:
-                pass
-        result.append(ServicoResponse(
-            id=str(s.id),
-            nome=s.nome,
-            descricao=s.descricao,
-            duracao_minutos=s.duracao_minutos,
-            preco=s.preco,
-            tributacao_iss=trib,
-            created_at=s.created_at,
-        ))
-    return result
-
-# ------------------------------------------------------------
-# Vendas
-# ------------------------------------------------------------
-@api_router.post("/vendas", response_model=VendaResponse)
-async def create_venda(
-    venda_data: VendaCreate,
-    current_user: User = Depends(get_current_user),
-    tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
-):
-    subtotal = sum(i.quantidade * i.preco_unitario - i.desconto for i in venda_data.itens)
-    total = subtotal
-
-    venda = Venda(
-        cliente_id=venda_data.cliente_id,
-        cliente_nome=venda_data.cliente_nome,
-        itens=json.dumps([i.dict() for i in venda_data.itens]),
-        subtotal=subtotal,
-        total=total,
-        forma_pagamento=venda_data.forma_pagamento,
-        emitir_nota=venda_data.emitir_nota,
-        tenant_id=tenant.id,
-        vendedor_id=current_user.id,
-    )
-    db.add(venda)
-
-    # baixa de estoque
-    for item in venda_data.itens:
-        if item.tipo == "produto":
-            produto = db.query(Produto).filter(
-                Produto.id == item.item_id,
-                Produto.tenant_id == tenant.id
-            ).first()
-            if produto:
-                produto.estoque_atual -= int(item.quantidade)
-
-    db.commit()
-    db.refresh(venda)
-
-    itens_parsed: List[ItemVenda] = []
-    try:
-        itens_data = json.loads(venda.itens)
-        itens_parsed = [ItemVenda(**d) for d in itens_data]
-    except Exception:
-        pass
-
-    return VendaResponse(
-        id=str(venda.id),
-        cliente_id=str(venda.cliente_id) if venda.cliente_id else None,
-        cliente_nome=venda.cliente_nome,
-        itens=itens_parsed,
-        subtotal=venda.subtotal,
-        desconto_total=venda.desconto_total,
-        total=venda.total,
-        forma_pagamento=venda.forma_pagamento,
-        emitir_nota=venda.emitir_nota,
-        status_nota=venda.status_nota,
-        created_at=venda.created_at,
-    )
-
-@api_router.get("/vendas", response_model=List[VendaResponse])
-async def get_vendas(
-    current_user: User = Depends(get_current_user),
-    tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
-):
-    vendas = db.query(Venda).filter(Venda.tenant_id == tenant.id).all()
-    result: List[VendaResponse] = []
-    for v in vendas:
-        itens_parsed: List[ItemVenda] = []
-        try:
-            itens_data = json.loads(v.itens)
-            itens_parsed = [ItemVenda(**d) for d in itens_data]
-        except Exception:
-            pass
-        result.append(VendaResponse(
-            id=str(v.id),
-            cliente_id=str(v.cliente_id) if v.cliente_id else None,
-            cliente_nome=v.cliente_nome,
-            itens=itens_parsed,
-            subtotal=v.subtotal,
-            desconto_total=v.desconto_total,
-            total=v.total,
-            forma_pagamento=v.forma_pagamento,
-            emitir_nota=v.emitir_nota,
-            status_nota=v.status_nota,
-            created_at=v.created_at,
-        ))
-    return result
-
-# ------------------------------------------------------------
-# Agendamentos
-# ------------------------------------------------------------
-@api_router.post("/agendamentos", response_model=AgendamentoResponse)
-async def create_agendamento(
-    agendamento_data: AgendamentoCreate,
-    current_user: User = Depends(get_current_user),
-    tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
-):
-    ag = Agendamento(**agendamento_data.dict(), tenant_id=tenant.id)
-    db.add(ag)
-    db.commit()
-    db.refresh(ag)
-    return AgendamentoResponse(
-        id=str(ag.id),
-        cliente_id=str(ag.cliente_id),
-        servico_id=str(ag.servico_id),
-        data_hora=ag.data_hora,
-        status=ag.status,
-        observacoes=ag.observacoes,
-        created_at=ag.created_at,
-    )
-
-@api_router.get("/agendamentos", response_model=List[AgendamentoResponse])
-async def get_agendamentos(
-    current_user: User = Depends(get_current_user),
-    tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
-):
-    ags = db.query(Agendamento).filter(Agendamento.tenant_id == tenant.id).all()
-    return [
-        AgendamentoResponse(
-            id=str(a.id),
-            cliente_id=str(a.cliente_id),
-            servico_id=str(a.servico_id),
-            data_hora=a.data_hora,
-            status=a.status,
-            observacoes=a.observacoes,
-            created_at=a.created_at,
-        ) for a in ags
-    ]
-
-# ------------------------------------------------------------
-# Router
-# ------------------------------------------------------------
-app.include_router(api_router)
-
-# ------------------------------------------------------------
-# Logging
-# ------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger("server")
-
-# ------------------------------------------------------------
-# Startup — cria Super Admin
-# ------------------------------------------------------------
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+# -------------------------------------------------------------------
+# Startup: cria tabelas + Super Admin
+# -------------------------------------------------------------------
 @app.on_event("startup")
-async def startup_event():
-    # cria tabelas (garante em migrations simples)
+def on_startup() -> None:
     create_tables()
-
     db = SessionLocal()
     try:
-        super_admin = db.query(User).filter(
-            User.email == ADMIN_EMAIL,
-            User.role == UserRole.SUPER_ADMIN
-        ).first()
-
-        if not super_admin:
-            sa = User(
-                id=str(uuid.uuid4()),
-                email=ADMIN_EMAIL,
-                name="Super Admin",
-                hashed_password=get_password_hash(ADMIN_PASSWORD),
-                role=UserRole.SUPER_ADMIN,
-                tenant_id=None,
-            )
-            db.add(sa)
-            db.commit()
-            logger.info("Super admin created")
+        if ADMIN_EMAIL and ADMIN_PASSWORD:
+            # Existe super admin?
+            q = db.execute(
+                select(User).where(User.email == ADMIN_EMAIL).where(User.role == "super_admin")
+            ).scalar_one_or_none()
+            if not q:
+                sa = User(
+                    email=ADMIN_EMAIL,
+                    name="Super Admin",
+                    role="super_admin",
+                    hashed_password=hash_password(ADMIN_PASSWORD),
+                )
+                db.add(sa)
+                db.commit()
+                log.info("Super admin criado")
+            else:
+                log.info("Super admin já existia")
+        else:
+            log.info("ADMIN_EMAIL/ADMIN_PASSWORD não configurados; pulando criação do super admin")
     finally:
         db.close()
+
+# -------------------------------------------------------------------
+# Health
+# -------------------------------------------------------------------
+@app.get("/", tags=["health"])
+def root() -> dict:
+    return {"status": "ok", "service": "agenda-boa", "time": datetime.now(timezone.utc).isoformat()}
+
+@app.get("/health", tags=["health"])
+@app.get("/api/health", tags=["health"])
+def health() -> dict:
+    return {"status": "ok"}
+
+# -------------------------------------------------------------------
+# Auth
+# -------------------------------------------------------------------
+auth_router = APIRouter(prefix="/auth", tags=["auth"])
+
+@auth_router.post("/login", response_model=TokenResponse)
+def login(data: LoginRequest, db: Session = Depends(get_db)) -> Any:
+    stmt = select(User).where(User.email == data.email)
+    if data.subdomain:
+        # se passou subdomínio, filtra pelo tenant correspondente
+        tenant_stmt = select(Tenant).where(Tenant.subdomain == data.subdomain.strip())
+        tenant = db.execute(tenant_stmt).scalar_one_or_none()
+        if not tenant:
+            raise HTTPException(status_code=400, detail="Empresa não encontrada")
+        stmt = stmt.where(User.tenant_id == tenant.id)
+    else:
+        # sem subdomínio -> só super_admin
+        stmt = stmt.where(User.role == "super_admin")
+
+    user = db.execute(stmt).scalar_one_or_none()
+    if not user or not verify_password(data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+
+    token = create_access_token({"sub": user.id})
+    user_payload = {
+        "id": str(user.id),
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
+        "tenant_id": str(user.tenant_id) if user.tenant_id else None,
+    }
+    return TokenResponse(access_token=token, user=user_payload)
+
+# -------------------------------------------------------------------
+# Clientes
+# -------------------------------------------------------------------
+clientes_router = APIRouter(prefix="/clientes", tags=["clientes"])
+
+@clientes_router.get("", response_model=List[ClienteOut])
+def list_clientes(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.execute(select(Cliente).where(Cliente.tenant_id == user.tenant_id) if user.role != "super_admin" else select(Cliente)).scalars().all()
+    return [ClienteOut(
+        id=str(r.id), nome=r.nome, email=r.email, telefone=r.telefone, cpf_cnpj=r.cpf_cnpj,
+        endereco=r.endereco, foto_url=r.foto_url, anamnese=r.anamnese
+    ) for r in rows]
+
+@clientes_router.post("", response_model=ClienteOut)
+def create_cliente(payload: ClienteIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role == "super_admin" and not user.tenant_id:
+        raise HTTPException(400, "Super admin não possui tenant para criar clientes")
+    obj = Cliente(
+        nome=payload.nome,
+        email=payload.email,
+        telefone=payload.telefone,
+        cpf_cnpj=payload.cpf_cnpj,
+        endereco=payload.endereco,
+        foto_url=payload.foto_url,
+        anamnese=payload.anamnese,
+        tenant_id=user.tenant_id,
+    )
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return ClienteOut(**payload.dict(), id=str(obj.id))
+
+# -------------------------------------------------------------------
+# Produtos
+# -------------------------------------------------------------------
+produtos_router = APIRouter(prefix="/produtos", tags=["produtos"])
+
+@produtos_router.get("", response_model=List[ProdutoOut])
+def list_produtos(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.execute(select(Produto).where(Produto.tenant_id == user.tenant_id) if user.role != "super_admin" else select(Produto)).scalars().all()
+    return [ProdutoOut(
+        id=str(r.id), nome=r.nome, preco=r.preco, codigo=r.codigo, descricao=r.descricao,
+        categoria=r.categoria, ncm=r.ncm, custo=r.custo, estoque_atual=r.estoque_atual, estoque_minimo=r.estoque_minimo
+    ) for r in rows]
+
+@produtos_router.post("", response_model=ProdutoOut)
+def create_produto(payload: ProdutoIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role == "super_admin" and not user.tenant_id:
+        raise HTTPException(400, "Super admin não possui tenant para criar produtos")
+    obj = Produto(tenant_id=user.tenant_id, **payload.dict())
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return ProdutoOut(**payload.dict(), id=str(obj.id))
+
+# -------------------------------------------------------------------
+# Serviços
+# -------------------------------------------------------------------
+servicos_router = APIRouter(prefix="/servicos", tags=["servicos"])
+
+@servicos_router.get("", response_model=List[ServicoOut])
+def list_servicos(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.execute(select(Servico).where(Servico.tenant_id == user.tenant_id) if user.role != "super_admin" else select(Servico)).scalars().all()
+    return [ServicoOut(
+        id=str(r.id), nome=r.nome, preco=r.preco, descricao=r.descricao,
+        duracao_minutos=r.duracao_minutos, tributacao_iss=r.tributacao_iss
+    ) for r in rows]
+
+@servicos_router.post("", response_model=ServicoOut)
+def create_servico(payload: ServicoIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role == "super_admin" and not user.tenant_id:
+        raise HTTPException(400, "Super admin não possui tenant para criar serviços")
+    obj = Servico(tenant_id=user.tenant_id, **payload.dict())
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return ServicoOut(**payload.dict(), id=str(obj.id))
+
+# -------------------------------------------------------------------
+# Vendas (mínimo viável)
+# -------------------------------------------------------------------
+vendas_router = APIRouter(prefix="/vendas", tags=["vendas"])
+
+@vendas_router.post("")
+def create_venda(payload: VendaIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    itens_json = [i.dict() for i in payload.itens]
+    subtotal = sum(i["preco"] * i["quantidade"] for i in itens_json)
+    desconto_total = sum(i.get("desconto", 0.0) for i in itens_json)
+    total = subtotal - desconto_total
+
+    obj = Venda(
+        cliente_id=payload.cliente_id,
+        cliente_nome=payload.cliente_nome,
+        itens=str(itens_json),
+        subtotal=subtotal,
+        desconto_total=desconto_total,
+        total=total,
+        forma_pagamento=payload.forma_pagamento,
+        emitir_nota=payload.emitir_nota,
+        tenant_id=user.tenant_id,
+        vendedor_id=user.id,
+    )
+    db.add(obj)
+    db.commit()
+    return {"id": str(obj.id), "total": total}
+
+# -------------------------------------------------------------------
+# Agendamentos (mínimo viável)
+# -------------------------------------------------------------------
+agend_router = APIRouter(prefix="/agendamentos", tags=["agendamentos"])
+
+@agend_router.post("")
+def create_agendamento(payload: AgendamentoIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    obj = Agendamento(
+        cliente_id=payload.cliente_id,
+        servico_id=payload.servico_id,
+        data_hora=payload.data_hora,
+        status=payload.status,
+        observacoes=payload.observacoes,
+        tenant_id=user.tenant_id,
+    )
+    db.add(obj)
+    db.commit()
+    return {"id": str(obj.id)}
+
+# -------------------------------------------------------------------
+# Montagem das rotas sob /api e também sem prefixo (compatibilidade)
+# -------------------------------------------------------------------
+api = APIRouter(prefix="/api")
+api.include_router(auth_router)
+api.include_router(clientes_router)
+api.include_router(produtos_router)
+api.include_router(servicos_router)
+api.include_router(vendas_router)
+api.include_router(agend_router)
+
+app.include_router(api)          # /api/...
+app.include_router(auth_router)  # /auth/login (fallback p/ chamadas diretas)
