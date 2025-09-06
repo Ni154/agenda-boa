@@ -1,16 +1,17 @@
-# netlify.toml (place this file inside your `frontend/` folder)
+# netlify.toml — Agenda Boa (coloque este arquivo dentro de `frontend/`)
+
 [build]
   command = "yarn install --frozen-lockfile || yarn install && yarn build"
   publish = "build"
 
-# Proxy API calls to your Railway backend (put your real URL below)
+# Proxy: o frontend chama /api e o Netlify encaminha para o backend em HTTPS
 [[redirects]]
   from = "/api/*"
   to = "https://agenda-boa-production.up.railway.app/api/:splat"
   status = 200
   force = true
 
-# SPA fallback
+# SPA fallback (React Router)
 [[redirects]]
   from = "/*"
   to = "/index.html"
